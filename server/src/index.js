@@ -1,11 +1,37 @@
-import express from "express";
+import "dotenv/config";
+import http from "http";
+import { Server as SocketIOServer } from "socket.io";
+import app from "./app.js";
+import { connectDB } from "./config/db.js";
+import dotenv from "dotenv";
+dotenv.config();
 
-const app = express();
+const PORT = process.env.PORT || 4000;
 
-app.get("/", (req, res) => {
-  res.send("Server is running 🚀");
-});
+async function start() {
+  await connectDB();
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+  const server = http.createServer(app);
+  const io = new SocketIOServer(server, {
+    cors: {
+      origin: process.env.CLIENT_ORIGIN,
+      methods: ["GET", "POST"],
+      credentials: true
+    }
+  });
+
+  io.on("connection", (socket) => {
+    console.log("socket connected", socket.id);
+    socket.emit("server:hello", { message: "Hello from server" });
+    socket.on("client:ping", () => socket.emit("server:pong"));
+  });
+
+  server.listen(PORT, () => {
+    console.log(`API listening on ${PORT}`);
+  });
+}
+
+start().catch((err) => {
+  console.error("Failed to start server", err);
+  process.exit(1);
 });
