@@ -1,2 +1,0 @@
-# InkSpire
-Draw, Guess, Connect
