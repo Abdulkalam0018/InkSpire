@@ -3,8 +3,6 @@ import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import app from "./app.js";
 import { connectDB } from "./config/db.js";
-import dotenv from "dotenv";
-dotenv.config();
 
 const PORT = process.env.PORT || 4000;
 

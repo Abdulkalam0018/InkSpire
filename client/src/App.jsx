@@ -1,13 +1,19 @@
-import { Link, Outlet } from "react-router-dom";
+import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/react'
 
-export default function App() {
+function App() {
   return (
-    <div style={{ fontFamily: "sans-serif", padding: 24 }}>
-      <nav style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-        <Link to="/">Home</Link>
-        <Link to="/login">Login</Link>
-      </nav>
-      <Outlet />
-    </div>
-  );
+    <>
+      <header>
+        <Show when="signed-out">
+          <SignInButton />
+          <SignUpButton />
+        </Show>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
+      </header>
+    </>
+  )
 }
+
+export default App
