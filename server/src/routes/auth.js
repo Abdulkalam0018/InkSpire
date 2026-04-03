@@ -1,75 +1,98 @@
 import { Router } from "express";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import passport from "passport";
+import { getAuth, requireAuth } from "@clerk/express";
 import User from "../models/user.js";
-import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-function signToken(user) {
-  return jwt.sign(
-    { sub: user._id.toString(), email: user.email, name: user.name },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+function firstNonEmpty(values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }
 
-router.post("/register", async (req, res) => {
-  const { email, password, name } = req.body;
+function buildProfileFromClaims(claims = {}) {
+  const email = firstNonEmpty([
+    claims.email,
+    claims.email_address,
+    claims.primary_email_address,
+    claims?.unsafe_metadata?.email,
+    claims?.public_metadata?.email
+  ]);
 
-  if (!email || !password) {
-    return res.status(400).json({ error: "email and password required" });
+  const fullName = firstNonEmpty([
+    claims.name,
+    [claims.given_name, claims.family_name].filter(Boolean).join(" "),
+    claims.first_name,
+    claims.username
+  ]);
+
+  return { email, fullName };
+}
+
+async function upsertClerkUser(authContext) {
+  const { userId, sessionClaims } = authContext;
+
+  if (!userId) {
+    throw new Error("Missing Clerk user id");
   }
 
-  const existing = await User.findOne({ email });
-  if (existing) {
-    return res.status(409).json({ error: "email already registered" });
+  const profile = buildProfileFromClaims(sessionClaims);
+  const update = {
+    clerkId: userId,
+    provider: "clerk",
+    name: profile.fullName
+  };
+
+  if (profile.email) {
+    update.email = profile.email.toLowerCase();
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = await User.create({ email, passwordHash, name, provider: "local" });
-  const token = signToken(user);
+  const user = await User.findOneAndUpdate(
+    { clerkId: userId },
+    { $set: update },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
 
-  res.json({ token, user: { id: user._id, email: user.email, name: user.name } });
+  return user;
+}
+
+router.get("/me", requireAuth(), async (req, res, next) => {
+  try {
+    const auth = getAuth(req);
+    const user = await upsertClerkUser(auth);
+
+    return res.json({
+      ok: true,
+      auth: {
+        userId: auth.userId,
+        sessionId: auth.sessionId
+      },
+      user: {
+        id: user._id,
+        clerkId: user.clerkId,
+        email: user.email,
+        name: user.name,
+        roles: user.roles
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+router.get("/test", requireAuth(), async (req, res, next) => {
+  try {
+    const auth = getAuth(req);
+    const user = await upsertClerkUser(auth);
 
-  const user = await User.findOne({ email, provider: "local" });
-  if (!user || !user.passwordHash) {
-    return res.status(401).json({ error: "invalid credentials" });
+    return res.json({ ok: true, user: { id: user._id, clerkId: user.clerkId } });
+  } catch (error) {
+    return next(error);
   }
-
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) {
-    return res.status(401).json({ error: "invalid credentials" });
-  }
-
-  const token = signToken(user);
-  res.json({ token, user: { id: user._id, email: user.email, name: user.name } });
 });
-
-router.get("/test", requireAuth, (req, res) => {
-  res.json({ ok: true, user: req.user });
-});
-
-router.get(
-  "/google",
-  passport.authenticate("google", { scope: ["profile", "email"], session: false })
-);
-
-router.get(
-  "/google/callback",
-  passport.authenticate("google", { session: false, failureRedirect: "/login" }),
-  (req, res) => {
-    const token = signToken(req.user);
-    const base = process.env.CLIENT_ORIGIN || "http://localhost:5173";
-    const redirectUrl = new URL("/oauth/callback", base);
-    redirectUrl.searchParams.set("token", token);
-    res.redirect(redirectUrl.toString());
-  }
-);
 
 export default router;

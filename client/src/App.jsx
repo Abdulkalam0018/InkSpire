@@ -1,19 +1,15 @@
-import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/react'
+import { Outlet } from "react-router-dom";
+import AppHeader from "./components/layout/AppHeader.jsx";
 
 function App() {
   return (
-    <>
-      <header>
-        <Show when="signed-out">
-          <SignInButton />
-          <SignUpButton />
-        </Show>
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
-      </header>
-    </>
-  )
+    <div className="app-shell">
+      <AppHeader />
+      <main className="app-main">
+        <Outlet />
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
