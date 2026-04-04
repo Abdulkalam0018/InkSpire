@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSocket } from "../context/SocketContext.jsx";
 
 const DEFAULT_MAX_PLAYERS = 8;
 
 export default function Home() {
   const { socket, isConnected, isReconnecting, connectionError } = useSocket();
+  const navigate = useNavigate();
 
   const [lobbyState, setLobbyState] = useState(null);
   const [lobbyError, setLobbyError] = useState(null);
@@ -50,18 +52,27 @@ export default function Home() {
       setLobbyError(err?.message || "Lobby error");
     };
 
+    const handleGameState = (state) => {
+      if (!state) return;
+      if (state.status && state.status !== "idle") {
+        navigate("/game");
+      }
+    };
+
     socket.on("disconnect", handleDisconnect);
     socket.on("lobby:state", handleLobbyState);
     socket.on("lobby:left", handleLobbyLeft);
     socket.on("lobby:error", handleLobbyError);
+    socket.on("game:state", handleGameState);
 
     return () => {
       socket.off("disconnect", handleDisconnect);
       socket.off("lobby:state", handleLobbyState);
       socket.off("lobby:left", handleLobbyLeft);
       socket.off("lobby:error", handleLobbyError);
+      socket.off("game:state", handleGameState);
     };
-  }, [socket]);
+  }, [socket, navigate]);
 
   useEffect(() => {
     if (connectionError) {
@@ -79,6 +90,11 @@ export default function Home() {
       });
     }
   }, [lobbyState]);
+
+  useEffect(() => {
+    if (!socket || !lobbyState?.id) return;
+    socket.emit("game:sync");
+  }, [socket, lobbyState?.id]);
 
   useEffect(() => {
     // This return function runs when the Home component unmounts 
@@ -137,6 +153,14 @@ export default function Home() {
         isPrivate: settingsDraft.isPrivate
       }
     });
+  }
+
+  function handleStartGame() {
+    emitWithAck("game:start", { lobbyId: lobbyState?.id });
+  }
+
+  function handleStopGame() {
+    emitWithAck("game:stop", { lobbyId: lobbyState?.id });
   }
 
   return (
@@ -288,6 +312,27 @@ export default function Home() {
                 </button>
                 {!isAdmin ? (
                   <div className="note">Only the lobby admin can update settings.</div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="card small">
+              <h3>Game Controls</h3>
+              <div className="grid">
+                <button
+                  onClick={handleStartGame}
+                  disabled={!isAdmin || lobbyState.members.length < 2}
+                >
+                  Start Game
+                </button>
+                <button className="secondary" onClick={handleStopGame} disabled={!isAdmin}>
+                  Stop Game
+                </button>
+                {!isAdmin ? (
+                  <div className="note">Only the lobby admin can manage the game.</div>
+                ) : null}
+                {lobbyState.members.length < 2 ? (
+                  <div className="note">Need at least 2 players to start.</div>
                 ) : null}
               </div>
             </div>

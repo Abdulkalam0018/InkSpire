@@ -1,4 +1,4 @@
-export function handleLobbyEvents(io, socket, lobbyStore) {
+export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
 
   function buildMember(displayName) {
     const user = socket.user; 
@@ -39,6 +39,10 @@ export function handleLobbyEvents(io, socket, lobbyStore) {
 
     if (result?.lobby) {
       emitLobbyState(result.lobby);
+    }
+
+    if (result?.deleted && gameStore) {
+      gameStore.removeGame(lobbyId);
     }
   }
 
@@ -128,6 +132,13 @@ export function handleLobbyEvents(io, socket, lobbyStore) {
     }
 
     emitLobbyState(result.lobby);
+
+    if (gameStore) {
+      const existingGame = gameStore.getGame(result.lobby.id);
+      if (existingGame) {
+        gameStore.ensureGame(result.lobby.id, result.lobby);
+      }
+    }
 
     if (typeof ack === "function") {
       ack({ ok: true });

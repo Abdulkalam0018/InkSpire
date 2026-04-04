@@ -2,6 +2,7 @@ import { Server as SocketIOServer } from "socket.io";
 import socketAuth from "../middleware/socketAuth.js";
 import { createLobbyStore } from "../lobby/lobbyStore.js" 
 import { handleLobbyEvents } from "../lobby/lobby.controller.js";
+import { createGameStore, handleGameEvents } from "../game/game.controller.js";
 
 export default function initSocket(httpServer) {
     const allowedOrigins = process.env.CORS_ORIGIN
@@ -26,6 +27,7 @@ export default function initSocket(httpServer) {
 
     // Create a single lobby store instance to be shared across all sockets
     const lobbyStore = createLobbyStore();
+    const gameStore = createGameStore();
 
     io.use(socketAuth);
 
@@ -35,7 +37,8 @@ export default function initSocket(httpServer) {
             socket.emit("server:pong");
         });
 
-        handleLobbyEvents(io, socket, lobbyStore);
+        handleLobbyEvents(io, socket, lobbyStore, gameStore);
+        handleGameEvents(io, socket, lobbyStore, gameStore);
 
         socket.on("disconnect", (reason) => {
             console.log(`Socket ${socket.id} disconnected:`, reason);

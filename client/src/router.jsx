@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import Home from "./pages/Home.jsx";
+import Game from "./pages/Game.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 const router = createBrowserRouter([
@@ -16,6 +17,10 @@ const router = createBrowserRouter([
           // </ProtectedRoute>
         )
       },
+      {
+        path: "game",
+        element: <Game />
+      }
     ]
   }
 ]);
