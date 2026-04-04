@@ -1,5 +1,7 @@
 import { Server as SocketIOServer } from "socket.io";
 import socketAuth from "../middleware/socketAuth.js";
+import { createLobbyStore } from "../lobby/lobbyStore.js" 
+import { handleLobbyEvents } from "../lobby/lobby.controller.js";
 
 export default function initSocket(httpServer) {
     const allowedOrigins = process.env.CORS_ORIGIN
@@ -22,6 +24,9 @@ export default function initSocket(httpServer) {
         transports: ["websocket", "polling"],
     });
 
+    // Create a single lobby store instance to be shared across all sockets
+    const lobbyStore = createLobbyStore();
+
     io.use(socketAuth);
 
     io.on("connection", (socket) => {
@@ -29,6 +34,9 @@ export default function initSocket(httpServer) {
             console.log("Received ping from client");
             socket.emit("server:pong");
         });
+
+        handleLobbyEvents(io, socket, lobbyStore);
+
         socket.on("disconnect", (reason) => {
             console.log(`Socket ${socket.id} disconnected:`, reason);
         });

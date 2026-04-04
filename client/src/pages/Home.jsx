@@ -1,17 +1,10 @@
 import { useEffect, useState } from "react";
-import { io } from "socket.io-client";
+import { useSocket } from "../context/SocketContext.jsx";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
 const DEFAULT_MAX_PLAYERS = 8;
 
 export default function Home() {
-  const [health, setHealth] = useState(null);
-  const [authTest, setAuthTest] = useState(null);
-
-  const [socket, setSocket] = useState(null);
-  const [socketStatus, setSocketStatus] = useState("disconnected");
-  const [socketId, setSocketId] = useState(null);
-  const [socketMsg, setSocketMsg] = useState(null);
+  const { socket, isConnected, isReconnecting, connectionError } = useSocket();
 
   const [lobbyState, setLobbyState] = useState(null);
   const [lobbyError, setLobbyError] = useState(null);
@@ -34,64 +27,47 @@ export default function Home() {
     isPrivate: false
   });
 
-  useEffect(() => {
-    fetch(`${API_BASE}/api/health`)
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => setHealth({ status: "error" }));
-  }, []);
+  const socketStatus = isConnected ? "connected" : isReconnecting ? "reconnecting" : "disconnected";
+  const socketId = socket?.id || null;
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
+    if (!socket) return;
 
-    fetch(`${API_BASE}/api/auth/test`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then((r) => r.json())
-      .then(setAuthTest)
-      .catch(() => setAuthTest({ ok: false }));
-  }, []);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    const socketClient = io(API_BASE, {
-      transports: ["websocket"],
-      auth: token ? { token } : {}
-    });
-
-    setSocket(socketClient);
-
-    socketClient.on("connect", () => {
-      setSocketStatus("connected");
-      setSocketId(socketClient.id);
-    });
-
-    socketClient.on("disconnect", () => {
-      setSocketStatus("disconnected");
-      setSocketId(null);
+    const handleDisconnect = () => {
       setLobbyState(null);
-    });
+    };
 
-    socketClient.on("server:hello", (msg) => setSocketMsg(msg.message));
-    socketClient.emit("client:ping");
-    socketClient.on("server:pong", () => setSocketMsg("pong received"));
-
-    socketClient.on("lobby:state", (state) => {
+    const handleLobbyState = (state) => {
       setLobbyState(state);
       setLobbyError(null);
-    });
+    };
 
-    socketClient.on("lobby:left", () => {
+    const handleLobbyLeft = () => {
       setLobbyState(null);
-    });
+    };
 
-    socketClient.on("lobby:error", (err) => {
+    const handleLobbyError = (err) => {
       setLobbyError(err?.message || "Lobby error");
-    });
+    };
 
-    return () => socketClient.disconnect();
-  }, []);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("lobby:state", handleLobbyState);
+    socket.on("lobby:left", handleLobbyLeft);
+    socket.on("lobby:error", handleLobbyError);
+
+    return () => {
+      socket.off("disconnect", handleDisconnect);
+      socket.off("lobby:state", handleLobbyState);
+      socket.off("lobby:left", handleLobbyLeft);
+      socket.off("lobby:error", handleLobbyError);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    if (connectionError) {
+      setLobbyError(connectionError);
+    }
+  }, [connectionError]);
 
   useEffect(() => {
     // Keep the settings form in sync with the current lobby.
@@ -104,11 +80,21 @@ export default function Home() {
     }
   }, [lobbyState]);
 
+  useEffect(() => {
+    // This return function runs when the Home component unmounts 
+    // (e.g., the user navigates to another page on your site)
+    return () => {
+      if (socket && isConnected) {
+        socket.emit("lobby:leave");
+      }
+    };
+  }, [socket, isConnected]);
+
   const isAdmin =
     Boolean(lobbyState) && Boolean(socketId) && lobbyState.adminSocketId === socketId;
 
   function emitWithAck(event, payload) {
-    if (!socket || socketStatus !== "connected") {
+    if (!socket || !isConnected) {
       setLobbyError("Socket not connected");
       return;
     }
@@ -176,7 +162,7 @@ export default function Home() {
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Guest name"
+              placeholder="Player name"
             />
           </label>
 
@@ -309,13 +295,6 @@ export default function Home() {
         ) : (
           <p className="muted">You are not in a lobby yet.</p>
         )}
-      </section>
-
-      <section className="card">
-        <h2>System Checks</h2>
-        <pre>Health: {JSON.stringify(health, null, 2)}</pre>
-        <pre>Auth Test: {JSON.stringify(authTest, null, 2)}</pre>
-        <pre>Socket: {JSON.stringify(socketMsg, null, 2)}</pre>
       </section>
     </div>
   );
