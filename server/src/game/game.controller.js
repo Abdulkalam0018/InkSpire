@@ -557,7 +557,14 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
     const lobby = lobbyStore.getLobby(lobbyId);
     const game = gameStore.getGame(lobbyId);
-    if (!lobby || !game) return;
+    
+    if (!game) return;
+
+    if(!lobby || lobby.members.size === 0) {
+      gameStore.removeGame(lobbyId);
+      return;
+    }
+
 
     game.scores.delete(socket.id);
     game.guessedThisRound.delete(socket.id);

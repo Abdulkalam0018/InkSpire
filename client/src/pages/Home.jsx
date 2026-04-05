@@ -96,16 +96,6 @@ export default function Home() {
     socket.emit("game:sync");
   }, [socket, lobbyState?.id]);
 
-  useEffect(() => {
-    // This return function runs when the Home component unmounts 
-    // (e.g., the user navigates to another page on your site)
-    return () => {
-      if (socket && isConnected) {
-        socket.emit("lobby:leave");
-      }
-    };
-  }, [socket, isConnected]);
-
   const isAdmin =
     Boolean(lobbyState) && Boolean(socketId) && lobbyState.adminSocketId === socketId;
 
