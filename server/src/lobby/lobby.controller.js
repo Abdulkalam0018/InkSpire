@@ -2,7 +2,9 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
 
   function buildMember(displayName) {
     const user = socket.user; 
-    const fallbackName = `Guest-${socket.id.slice(0, 4)}`;
+    // Fallback requires a client-generated auth ID to persist guests, or uses DB ID
+    const userId = user?.clerkId || user?.id || socket.handshake.auth?.userId || `guest_${socket.id}`;
+    const fallbackName = `Guest-${userId.slice(0, 6)}`;
     
     const name =
       typeof displayName === "string" && displayName.trim()
@@ -10,9 +12,10 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
         : user?.name || fallbackName;
 
     return {
-      socketId: socket.id,
-      userId: user?.clerkId || user?.id || null, 
-      name
+      userId,
+      currentSocketId: socket.id, // Stored for targeted routing
+      name,
+      isOnline: true // for reconnection handling
     };
   }
 
@@ -27,10 +30,10 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
     }
   }
 
-  function leaveLobbyById(lobbyId) {
-    if (!lobbyId) return;
+  function leaveLobbyById(lobbyId, userId) {
+    if (!lobbyId || !userId) return;
     
-    const result = lobbyStore.removeMember(lobbyId, socket.id);
+    const result = lobbyStore.removeMember(lobbyId, userId);
     socket.leave(lobbyId);
 
     if (socket.data.lobbyId === lobbyId) {
@@ -48,21 +51,22 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
 
   socket.on("lobby:create", (payload = {}, ack) => {
     const previousLobbyId = socket.data.lobbyId;
+    const previousUserId = socket.data.userId;
     const owner = buildMember(payload.displayName);
+    
+    socket.data.userId = owner.userId; 
     const lobby = lobbyStore.createLobby(payload.settings, owner);
 
     socket.join(lobby.id);
     socket.data.lobbyId = lobby.id;
 
     if (previousLobbyId && previousLobbyId !== lobby.id) {
-      leaveLobbyById(previousLobbyId);
+      leaveLobbyById(previousLobbyId, previousUserId);
     }
 
     emitLobbyState(lobby);
 
-    if (typeof ack === "function") {
-      ack({ ok: true, lobbyId: lobby.id });
-    }
+    if (typeof ack === "function") ack({ ok: true, lobbyId: lobby.id });
   });
 
   socket.on("lobby:join", (payload = {}, ack) => {
@@ -75,6 +79,7 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
     }
 
     const member = buildMember(payload.displayName);
+    socket.data.userId = member.userId; // Cache for easy access
     const joinResult = lobbyStore.addMember(lobbyId, member);
 
     if (joinResult?.error) {
@@ -87,30 +92,27 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
     socket.data.lobbyId = lobbyId;
 
     if (previousLobbyId && previousLobbyId !== lobbyId) {
-      leaveLobbyById(previousLobbyId);
+      leaveLobbyById(previousLobbyId, member.userId);
     }
 
     emitLobbyState(joinResult.lobby);
 
-    if (typeof ack === "function") {
-      ack({ ok: true, lobbyId });
-    }
+    if (typeof ack === "function") ack({ ok: true, lobbyId });
   });
 
   socket.on("lobby:leave", (_payload, ack) => {
     const lobbyId = socket.data.lobbyId;
+    const userId = socket.data.userId;
     
     if (!lobbyId) {
       emitLobbyError(ack, "You are not in a lobby");
       return;
     }
 
-    leaveLobbyById(lobbyId);
+    leaveLobbyById(lobbyId, userId);
     socket.emit("lobby:left", { ok: true });
 
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("lobby:updateSettings", (payload = {}, ack) => {
@@ -124,7 +126,7 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    const result = lobbyStore.updateSettings(lobbyId, socket.id, payload.settings);
+    const result = lobbyStore.updateSettings(lobbyId, socket.data.userId, payload.settings);
 
     if (result?.error) {
       emitLobbyError(ack, result.error);
@@ -140,12 +142,23 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
       }
     }
 
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("disconnect", () => {
     leaveLobbyById(socket.data.lobbyId);
+    
+    // Note: To handle reconnections, we mark the member as offline instead of removing them immediately.
+    
+    // const lobbyId = socket.data?.lobbyId;
+    // const userId = socket.data?.userId;
+    
+    // if (lobbyId && userId) {
+    //   const lobby = lobbyStore.getLobby(lobbyId);
+    //   if (lobby && lobby.members.has(userId)) {
+    //     lobby.members.get(userId).isOnline = false;
+    //     emitLobbyState(lobby);
+    //   }
+    // }
   });
 }

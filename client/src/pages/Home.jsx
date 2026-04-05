@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSocket } from "../context/SocketContext.jsx";
+import { useAuth } from "@clerk/react";
 
 const DEFAULT_MAX_PLAYERS = 8;
 
 export default function Home() {
   const { socket, isConnected, isReconnecting, connectionError } = useSocket();
+  const { userId: authUserId } = useAuth();
   const navigate = useNavigate();
 
   const [lobbyState, setLobbyState] = useState(null);
@@ -97,7 +99,7 @@ export default function Home() {
   }, [socket, lobbyState?.id]);
 
   const isAdmin =
-    Boolean(lobbyState) && Boolean(socketId) && lobbyState.adminSocketId === socketId;
+    Boolean(lobbyState) && Boolean(authUserId) && lobbyState.adminUserId === authUserId;
 
   function emitWithAck(event, payload) {
     if (!socket || !isConnected) {
@@ -246,9 +248,10 @@ export default function Home() {
               <h3>Members</h3>
               <ul className="list">
                 {lobbyState.members.map((member) => (
-                  <li key={member.socketId}>
+                  <li key={member.userId}>
                     {member.name}
-                    {member.socketId === lobbyState.adminSocketId ? " (admin)" : ""}
+                    {member.userId === lobbyState.adminUserId ? " (admin)" : ""}
+                    {member.isOnline ? "" : " (offline)"}
                   </li>
                 ))}
               </ul>

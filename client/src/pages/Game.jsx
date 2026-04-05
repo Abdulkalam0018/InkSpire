@@ -50,9 +50,9 @@ export default function Game() {
   }, [socket]);
 
   const presenterName = useMemo(() => {
-    if (!gameState?.presenterSocketId || !gameState?.scores) return null;
+    if (!gameState?.presenterUserId || !gameState?.scores) return null;
     const presenter = gameState.scores.find(
-      (player) => player.socketId === gameState.presenterSocketId
+      (player) => player.userId === gameState.presenterUserId
     );
     return presenter?.name || "Presenter";
   }, [gameState]);
@@ -201,9 +201,10 @@ export default function Game() {
         {gameState?.scores?.length ? (
           <ul className="list">
             {gameState.scores.map((player) => (
-              <li key={player.socketId}>
+              <li key={player.userId}>
                 {player.name}
-                {player.socketId === gameState.presenterSocketId ? " (presenter)" : ""} —{" "}
+                {player.userId === gameState.presenterUserId ? " (presenter)" : ""}
+                {!player.isOnline ? " (offline)" : ""} —{" "}
                 {player.score}
               </li>
             ))}

@@ -51,15 +51,15 @@ function maskWord(word) {
 function createGame(lobbyId, lobby) {
   return {
     lobbyId,
-    status: "idle", // idle | presenter-choosing | in-round | round-ended | game-over
+    status: "idle",
     round: 0,
-    presenterSocketId: null,
+    presenterUserId: null, // Uses userId
     word: null,
     wordOptions: [],
     roundStartedAt: null,
     roundEndsAt: null,
-    scores: new Map(),
-    guessedThisRound: new Set(),
+    scores: new Map(), // Keyed by userId
+    guessedThisRound: new Set(), // Keyed by userId
     lastPresenterIndex: -1,
     lastRoundResult: null,
     settings: normalizeSettings(lobby?.settings || {}),
@@ -124,15 +124,15 @@ function getRemainingSec(game) {
 
 function syncMembers(game, lobby) {
   for (const member of lobby.members.values()) {
-    if (!game.scores.has(member.socketId)) {
-      game.scores.set(member.socketId, 0);
+    if (!game.scores.has(member.userId)) { // Key by userId
+      game.scores.set(member.userId, 0);
     }
   }
 
-  for (const socketId of game.scores.keys()) {
-    if (!lobby.members.has(socketId)) {
-      game.scores.delete(socketId);
-      game.guessedThisRound.delete(socketId);
+  for (const userId of game.scores.keys()) {
+    if (!lobby.members.has(userId)) { // Check userId
+      game.scores.delete(userId);
+      game.guessedThisRound.delete(userId);
     }
   }
 }
@@ -141,9 +141,10 @@ function buildScoreboard(lobby, scores) {
   const list = [];
   for (const member of lobby.members.values()) {
     list.push({
-      socketId: member.socketId,
+      userId: member.userId, // Return userId to client
       name: member.name,
-      score: scores.get(member.socketId) || 0
+      score: scores.get(member.userId) || 0,
+      isOnline: member.isOnline // Added for UI styling
     });
   }
 
@@ -152,11 +153,11 @@ function buildScoreboard(lobby, scores) {
 }
 
 function pickNextPresenter(lobby, game) {
-  const memberIds = Array.from(lobby.members.keys());
+  const memberIds = Array.from(lobby.members.keys()); // Keys are userIds
   if (memberIds.length === 0) return null;
 
-  if (game.presenterSocketId && memberIds.includes(game.presenterSocketId)) {
-    const currentIndex = memberIds.indexOf(game.presenterSocketId);
+  if (game.presenterUserId && memberIds.includes(game.presenterUserId)) {
+    const currentIndex = memberIds.indexOf(game.presenterUserId);
     const nextIndex = (currentIndex + 1) % memberIds.length;
     game.lastPresenterIndex = nextIndex;
     return memberIds[nextIndex];
@@ -177,7 +178,7 @@ function buildBaseState(game, lobby, reason) {
     lobbyId: lobby.id,
     status: game.status,
     round: game.round,
-    presenterSocketId: game.presenterSocketId,
+    presenterUserId: game.presenterUserId, // Uses userId
     settings: {
       roundDurationSec: game.settings.roundDurationSec,
       intermissionSec: game.settings.intermissionSec,
@@ -191,8 +192,8 @@ function buildBaseState(game, lobby, reason) {
   };
 }
 
-function personalizeState(baseState, game, socketId) {
-  const isPresenter = socketId === game.presenterSocketId;
+function personalizeState(baseState, game, userId) { // Compares userId
+  const isPresenter = userId === game.presenterUserId;
   return {
     ...baseState,
     isPresenter,
@@ -238,25 +239,32 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     const baseState = buildBaseState(game, lobby, reason);
 
     for (const member of lobby.members.values()) {
-      const stateForMember = personalizeState(baseState, game, member.socketId);
-      io.to(member.socketId).emit("game:state", stateForMember);
+      if (!member.isOnline) continue;
+      const stateForMember = personalizeState(baseState, game, member.userId);
+      // Route via currentSocketId found in Member object
+      io.to(member.currentSocketId).emit("game:state", stateForMember);
     }
   }
 
-  function emitGameStateToSocket(lobby, game, socketId, reason) {
+  function emitGameStateToSocket(lobby, game, socket, reason) {
     syncMembers(game, lobby);
     const baseState = buildBaseState(game, lobby, reason);
-    const stateForMember = personalizeState(baseState, game, socketId);
-    io.to(socketId).emit("game:state", stateForMember);
+    const stateForMember = personalizeState(baseState, game, socket.data.userId);
+    io.to(socket.id).emit("game:state", stateForMember);
   }
 
   function emitPresenterOptions(lobby, game) {
-    if (!game.presenterSocketId) return;
-    io.to(game.presenterSocketId).emit("game:presenter", {
-      lobbyId: lobby.id,
-      round: game.round,
-      options: game.wordOptions
-    });
+    if (!game.presenterUserId) return;
+    const presenter = lobby.members.get(game.presenterUserId);
+    
+    // Route 1-to-1 direct message using the stored socket ID
+    if (presenter && presenter.isOnline) {
+      io.to(presenter.currentSocketId).emit("game:presenter", {
+        lobbyId: lobby.id,
+        round: game.round,
+        options: game.wordOptions
+      });
+    }
   }
 
   function beginPresenterSelection(lobby, game, reason) {
@@ -267,7 +275,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     game.guessedThisRound = new Set();
     game.roundStartedAt = null;
     game.roundEndsAt = null;
-    game.presenterSocketId = pickNextPresenter(lobby, game);
+    game.presenterUserId = pickNextPresenter(lobby, game);
     game.lastRoundResult = null;
 
     emitGameState(lobby, game, reason);
@@ -314,14 +322,14 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     beginPresenterSelection(lobby, game, "next-round");
   }
 
-  function endRound(lobby, game, reason, winnerSocketId = null) {
+  function endRound(lobby, game, reason, winnerUserId = null) { // Expects userId
     if (game.status !== "in-round" && game.status !== "presenter-choosing") return;
 
     clearAllTimers(game);
     game.status = "round-ended";
     game.lastRoundResult = {
       reason,
-      winnerSocketId,
+      winnerUserId, // Uses userId
       word: game.word,
       endedAt: new Date().toISOString()
     };
@@ -344,7 +352,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     clearAllTimers(game);
     game.status = "idle";
     game.round = 1;
-    game.presenterSocketId = null;
+    game.presenterUserId = null; // Uses userId
     game.word = null;
     game.wordOptions = [];
     game.roundStartedAt = null;
@@ -359,22 +367,22 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     beginPresenterSelection(lobby, game, "game-start");
   }
 
-  function handleCorrectGuess(lobby, game, socketId) {
-    if (game.guessedThisRound.has(socketId)) return;
+  function handleCorrectGuess(lobby, game, userId) { // Expects userId
+    if (game.guessedThisRound.has(userId)) return;
 
     const remaining = getRemainingSec(game) || 0;
     const basePoints = 100;
     const timeBonus = remaining;
 
-    const currentScore = game.scores.get(socketId) || 0;
-    game.scores.set(socketId, currentScore + basePoints + timeBonus);
-    game.guessedThisRound.add(socketId);
+    const currentScore = game.scores.get(userId) || 0;
+    game.scores.set(userId, currentScore + basePoints + timeBonus);
+    game.guessedThisRound.add(userId);
 
-    io.to(lobby.id).emit("game:guessCorrect", { socketId });
+    io.to(lobby.id).emit("game:guessCorrect", { userId }); // Broadasts userId
 
     const nonPresenterCount = Math.max(0, lobby.members.size - 1);
     if (nonPresenterCount > 0 && game.guessedThisRound.size >= nonPresenterCount) {
-      endRound(lobby, game, "all-guessed", socketId);
+      endRound(lobby, game, "all-guessed", userId);
     } else {
       emitGameState(lobby, game, "score");
     }
@@ -384,7 +392,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     const lobby = getLobbyOrError(payload, ack);
     if (!lobby) return;
 
-    if (lobby.adminSocketId !== socket.id) {
+    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
       emitError(ack, "Only the lobby admin can start the game");
       return;
     }
@@ -403,9 +411,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
     startNewGame(lobby, game);
 
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("game:chooseWord", (payload = {}, ack) => {
@@ -423,7 +429,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    if (socket.id !== game.presenterSocketId) {
+    if (socket.data.userId !== game.presenterUserId) { // Checks userId
       emitError(ack, "Only the presenter can choose the word");
       return;
     }
@@ -441,9 +447,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
     startRound(lobby, game, chosen);
 
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("game:guess", (payload = {}, ack) => {
@@ -461,7 +465,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    if (socket.id === game.presenterSocketId) {
+    if (socket.data.userId === game.presenterUserId) { // Checks userId
       emitError(ack, "Presenter cannot guess");
       return;
     }
@@ -473,16 +477,12 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     }
 
     if (guess === game.word) {
-      handleCorrectGuess(lobby, game, socket.id);
-      if (typeof ack === "function") {
-        ack({ ok: true, correct: true });
-      }
+      handleCorrectGuess(lobby, game, socket.data.userId); // Passes userId
+      if (typeof ack === "function") ack({ ok: true, correct: true });
       return;
     }
 
-    if (typeof ack === "function") {
-      ack({ ok: true, correct: false });
-    }
+    if (typeof ack === "function") ack({ ok: true, correct: false });
   });
 
   socket.on("game:nextRound", (payload = {}, ack) => {
@@ -490,26 +490,18 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     if (!lobby) return;
 
     const game = gameStore.getGame(lobby.id);
-    if (!game) {
-      emitError(ack, "Game not started");
-      return;
-    }
+    if (!game) return emitError(ack, "Game not started");
 
-    if (lobby.adminSocketId !== socket.id) {
-      emitError(ack, "Only the lobby admin can advance rounds");
-      return;
+    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
+      return emitError(ack, "Only the lobby admin can advance rounds");
     }
 
     if (game.status !== "round-ended") {
-      emitError(ack, "Round has not ended yet");
-      return;
+      return emitError(ack, "Round has not ended yet");
     }
 
     startNextRound(lobby, game);
-
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("game:stop", (payload = {}, ack) => {
@@ -517,21 +509,14 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     if (!lobby) return;
 
     const game = gameStore.getGame(lobby.id);
-    if (!game) {
-      emitError(ack, "Game not started");
-      return;
-    }
+    if (!game) return emitError(ack, "Game not started");
 
-    if (lobby.adminSocketId !== socket.id) {
-      emitError(ack, "Only the lobby admin can stop the game");
-      return;
+    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
+      return emitError(ack, "Only the lobby admin can stop the game");
     }
 
     endGame(lobby, game, "stopped");
-
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("game:sync", (payload = {}, ack) => {
@@ -539,46 +524,29 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     if (!lobby) return;
 
     const game = gameStore.getGame(lobby.id);
-    if (!game) {
-      emitError(ack, "Game not started");
-      return;
-    }
+    if (!game) return emitError(ack, "Game not started");
 
-    emitGameStateToSocket(lobby, game, socket.id, "sync");
-
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+    emitGameStateToSocket(lobby, game, socket, "sync");
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("disconnect", () => {
     const lobbyId = socket.data?.lobbyId;
-    if (!lobbyId) return;
+    const userId = socket.data?.userId;
+    if (!lobbyId || !userId) return;
 
     const lobby = lobbyStore.getLobby(lobbyId);
     const game = gameStore.getGame(lobbyId);
     
     if (!game) return;
 
-    if(!lobby || lobby.members.size === 0) {
-      gameStore.removeGame(lobbyId);
-      return;
-    }
+    // We no longer instantly wipe game.scores or game.guessedThisRound
+    // Let the game progress, and the disconnected user remains as 'isOnline: false'
 
-
-    game.scores.delete(socket.id);
-    game.guessedThisRound.delete(socket.id);
-
-    if (game.presenterSocketId === socket.id) {
-      if (game.status === "presenter-choosing") {
-        beginPresenterSelection(lobby, game, "presenter-left");
-        return;
-      }
-
-      if (game.status === "in-round") {
-        endRound(lobby, game, "presenter-left");
-        return;
-      }
+    // If everyone left the lobby, cleanup
+    if (!lobby || Array.from(lobby.members.values()).every(m => !m.isOnline)) {
+       // Optional: Add logic to clean up games if empty
+       return; 
     }
 
     emitGameState(lobby, game, "player-left");

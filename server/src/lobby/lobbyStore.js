@@ -1,10 +1,7 @@
-import crypto from "crypto";// Security-related operations
+import crypto from "crypto";
 
-// Simple in-memory lobby store.
-// This keeps data in RAM only (no database), so it resets on server restart.
 export function createLobbyStore() {
-  const lobbies = new Map();  //Fast lookup O(1) ✅ Unique keys ✅
-
+  const lobbies = new Map();
 
   const DEFAULT_MAX_PLAYERS = 8;
   const MIN_MAX_PLAYERS = 2;
@@ -72,12 +69,12 @@ export function createLobbyStore() {
     return {
       id: lobby.id,
       settings: lobby.settings,
-      adminSocketId: lobby.adminSocketId,
+      adminUserId: lobby.adminUserId, // Uses userId now
       createdAt: lobby.createdAt,
       members: Array.from(lobby.members.values()).map((member) => ({
-        socketId: member.socketId,
         userId: member.userId,
-        name: member.name
+        name: member.name,
+        isOnline: member.isOnline
       }))
     };
   }
@@ -87,12 +84,12 @@ export function createLobbyStore() {
     const lobby = {
       id,
       settings: normalizeCreateSettings(rawSettings, id),
-      adminSocketId: owner.socketId,
+      adminUserId: owner.userId, // Binds lobby ownership to the User
       createdAt: new Date().toISOString(),
       members: new Map()
     };
 
-    lobby.members.set(owner.socketId, owner);
+    lobby.members.set(owner.userId, owner); // Keyed by userId
     lobbies.set(id, lobby);
     return lobby;
   }
@@ -105,7 +102,11 @@ export function createLobbyStore() {
     const lobby = lobbies.get(lobbyId);
     if (!lobby) return { error: "Lobby not found" };
 
-    if (lobby.members.has(member.socketId)) {
+    // Reconnection handling: Update socket ID and status if user already exists
+    if (lobby.members.has(member.userId)) {
+      const existingMember = lobby.members.get(member.userId);
+      existingMember.currentSocketId = member.currentSocketId;
+      existingMember.isOnline = true;
       return { lobby };
     }
 
@@ -113,35 +114,34 @@ export function createLobbyStore() {
       return { error: "Lobby is full" };
     }
 
-    lobby.members.set(member.socketId, member);
+    lobby.members.set(member.userId, member); // Keyed by userId
     return { lobby };
   }
 
-  function removeMember(lobbyId, socketId) {
+  function removeMember(lobbyId, userId) { // Accepts userId
     const lobby = lobbies.get(lobbyId);
     if (!lobby) return null;
 
-    lobby.members.delete(socketId);
+    lobby.members.delete(userId);
 
     if (lobby.members.size === 0) {
       lobbies.delete(lobbyId);
       return { deleted: true };
     }
 
-    if (lobby.adminSocketId === socketId) {
-      // Transfer admin to the first remaining member.
+    if (lobby.adminUserId === userId) {
       const [nextAdmin] = lobby.members.keys();
-      lobby.adminSocketId = nextAdmin;
+      lobby.adminUserId = nextAdmin;
     }
 
     return { lobby };
   }
 
-  function updateSettings(lobbyId, socketId, rawSettings) {
+  function updateSettings(lobbyId, userId, rawSettings) { // Accepts userId
     const lobby = lobbies.get(lobbyId);
     if (!lobby) return { error: "Lobby not found" };
 
-    if (lobby.adminSocketId !== socketId) {
+    if (lobby.adminUserId !== userId) {
       return { error: "Only the lobby admin can update settings" };
     }
 
