@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSocket } from "../context/SocketContext.jsx";
+import DrawingBoard from "../components/canvas/DrawingBoard.jsx";
 
 export default function Game() {
   const { socket, isConnected, isReconnecting, connectionError } = useSocket();
@@ -194,6 +195,15 @@ export default function Game() {
         ) : (
           <p className="muted">Guesses open when the round starts.</p>
         )}
+      </section>
+
+      <section className="card">
+        <h2>Canvas</h2>
+        <DrawingBoard
+          socket={socket}
+          gameState={gameState}
+          onError={(message) => setGameError(message)}
+        />
       </section>
 
       <section className="card">

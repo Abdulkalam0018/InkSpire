@@ -1,207 +1,19 @@
-const DEFAULT_WORD_BANK = ["apple", "river", "mountain", "pencil", "spaceship", "dragon", "guitar", "castle", "meteor", "robot", "island", "flower", "camera", "tiger", "bridge", "planet", "forest", "lighthouse", "piano", "rocket", "ocean", "butterfly", "volcano", "cabin", "rainbow", "desert", "comet", "library", "whisper", "scooter", "anchor", "balloon", "bamboo", "beacon", "beehive", "blizzard", "blueberry", "bonfire", "bookstore", "cactus", "carousel", "cedar", "chameleon", "chimney", "cinnamon", "cliff", "coconut", "compass", "copper", "coral", "cottage", "crater", "crystal", "cupcake", "dandelion", "dolphin", "drizzle", "eagle", "ember", "envelope", "fabric", "falcon", "fossil", "fountain", "galaxy", "garden", "glacier", "glowworm", "granite", "harbor", "hedgehog", "helmet", "horizon", "honeycomb", "jasmine", "jigsaw", "kayak", "kettle", "lantern", "lavender", "lemonade", "lullaby", "magnet", "mango", "marble", "meadow", "midnight", "monsoon", "mosaic", "mushroom", "nebula", "notebook", "oasis", "orchid", "origami", "parachute", "pebble", "pepper", "pinecone", "postcard", "quartz", "quiver", "raincoat", "raspberry", "reef", "riddle", "sapphire", "scarecrow", "seashell", "shadow", "shamrock", "sketch", "snowflake", "sparrow", "starlight", "stonebridge", "sunflower", "sunset", "telescope", "thunder", "timber", "topaz", "torch", "tornado", "tram", "treasure", "tulip", "umbrella", "voyage", "waterfall"];
+import {
+  normalizeCanvasState,
+  normalizeWordInput,
+  pickWordOptions
+} from "./game.config.js";
+import {
+  buildBaseState,
+  buildScoreboard,
+  clearAllTimers,
+  getRemainingSec,
+  personalizeState,
+  pickNextPresenter,
+  syncMembers
+} from "./game.state.js";
 
-function clampNumber(value, fallback, min, max) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.min(Math.max(numeric, min), max);
-}
-
-function normalizeSettings(raw = {}) {
-  const roundDurationSec = clampNumber(raw.roundDurationSec, 60, 20, 180);
-  const intermissionSec = clampNumber(raw.intermissionSec, 6, 3, 20);
-  const maxRounds = clampNumber(raw.maxRounds, 5, 1, 20);
-
-  const customBank = Array.isArray(raw.wordBank || raw.words)
-    ? (raw.wordBank || raw.words)
-        .filter((word) => typeof word === "string" && word.trim())
-        .map((word) => word.trim().toLowerCase())
-    : [];
-
-  return {
-    roundDurationSec,
-    intermissionSec,
-    maxRounds,
-    wordBank: customBank.length > 0 ? customBank : DEFAULT_WORD_BANK
-  };
-}
-
-function pickWordOptions(wordBank, count = 3) {
-  const pool = [...wordBank];
-  for (let i = pool.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  return pool.slice(0, Math.min(count, pool.length));
-}
-
-function normalizeWordInput(value) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function maskWord(word) {
-  if (!word) return null;
-  return word
-    .split("")
-    .map((char) => (char === " " ? " " : "_"))
-    .join("");
-}
-
-function createGame(lobbyId, lobby) {
-  return {
-    lobbyId,
-    status: "idle",
-    round: 0,
-    presenterUserId: null, // Uses userId
-    word: null,
-    wordOptions: [],
-    roundStartedAt: null,
-    roundEndsAt: null,
-    scores: new Map(), // Keyed by userId
-    guessedThisRound: new Set(), // Keyed by userId
-    lastPresenterIndex: -1,
-    lastRoundResult: null,
-    settings: normalizeSettings(lobby?.settings || {}),
-    timerIntervalId: null,
-    roundTimeoutId: null,
-    intermissionTimeoutId: null
-  };
-}
-
-export function createGameStore() {
-  const games = new Map();
-
-  function getGame(lobbyId) {
-    return games.get(lobbyId);
-  }
-
-  function ensureGame(lobbyId, lobby) {
-    let game = games.get(lobbyId);
-    if (!game) {
-      game = createGame(lobbyId, lobby);
-      games.set(lobbyId, game);
-    } else {
-      game.settings = normalizeSettings(lobby?.settings || {});
-    }
-    return game;
-  }
-
-  function removeGame(lobbyId) {
-    const game = games.get(lobbyId);
-    if (game) {
-      clearAllTimers(game);
-    }
-    games.delete(lobbyId);
-  }
-
-  return {
-    getGame,
-    ensureGame,
-    removeGame
-  };
-}
-
-function clearAllTimers(game) {
-  if (game.timerIntervalId) {
-    clearInterval(game.timerIntervalId);
-    game.timerIntervalId = null;
-  }
-  if (game.roundTimeoutId) {
-    clearTimeout(game.roundTimeoutId);
-    game.roundTimeoutId = null;
-  }
-  if (game.intermissionTimeoutId) {
-    clearTimeout(game.intermissionTimeoutId);
-    game.intermissionTimeoutId = null;
-  }
-}
-
-function getRemainingSec(game) {
-  if (!game.roundEndsAt) return null;
-  return Math.max(0, Math.ceil((game.roundEndsAt - Date.now()) / 1000));
-}
-
-function syncMembers(game, lobby) {
-  for (const member of lobby.members.values()) {
-    if (!game.scores.has(member.userId)) { // Key by userId
-      game.scores.set(member.userId, 0);
-    }
-  }
-
-  for (const userId of game.scores.keys()) {
-    if (!lobby.members.has(userId)) { // Check userId
-      game.scores.delete(userId);
-      game.guessedThisRound.delete(userId);
-    }
-  }
-}
-
-function buildScoreboard(lobby, scores) {
-  const list = [];
-  for (const member of lobby.members.values()) {
-    list.push({
-      userId: member.userId, // Return userId to client
-      name: member.name,
-      score: scores.get(member.userId) || 0,
-      isOnline: member.isOnline // Added for UI styling
-    });
-  }
-
-  list.sort((a, b) => b.score - a.score);
-  return list;
-}
-
-function pickNextPresenter(lobby, game) {
-  const memberIds = Array.from(lobby.members.keys()); // Keys are userIds
-  if (memberIds.length === 0) return null;
-
-  if (game.presenterUserId && memberIds.includes(game.presenterUserId)) {
-    const currentIndex = memberIds.indexOf(game.presenterUserId);
-    const nextIndex = (currentIndex + 1) % memberIds.length;
-    game.lastPresenterIndex = nextIndex;
-    return memberIds[nextIndex];
-  }
-
-  if (game.lastPresenterIndex >= 0 && game.lastPresenterIndex < memberIds.length) {
-    const nextIndex = (game.lastPresenterIndex + 1) % memberIds.length;
-    game.lastPresenterIndex = nextIndex;
-    return memberIds[nextIndex];
-  }
-
-  game.lastPresenterIndex = 0;
-  return memberIds[0];
-}
-
-function buildBaseState(game, lobby, reason) {
-  return {
-    lobbyId: lobby.id,
-    status: game.status,
-    round: game.round,
-    presenterUserId: game.presenterUserId, // Uses userId
-    settings: {
-      roundDurationSec: game.settings.roundDurationSec,
-      intermissionSec: game.settings.intermissionSec,
-      maxRounds: game.settings.maxRounds
-    },
-    wordLength: game.word ? game.word.length : null,
-    timeRemainingSec: getRemainingSec(game),
-    scores: buildScoreboard(lobby, game.scores),
-    lastRoundResult: game.lastRoundResult,
-    reason
-  };
-}
-
-function personalizeState(baseState, game, userId) { // Compares userId
-  const isPresenter = userId === game.presenterUserId;
-  return {
-    ...baseState,
-    isPresenter,
-    word: game.word ? (isPresenter ? game.word : maskWord(game.word)) : null,
-    wordOptions:
-      game.status === "presenter-choosing" && isPresenter ? game.wordOptions : null
-  };
-}
+export { createGameStore } from "./game.store.js";
 
 export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   function emitError(ack, message) {
@@ -253,6 +65,30 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     io.to(socket.id).emit("game:state", stateForMember);
   }
 
+  function emitCanvasState(lobby, game, reason) {
+    io.to(lobby.id).emit("game:canvasState", {
+      lobbyId: lobby.id,
+      canvas: game.canvasState,
+      version: game.canvasVersion,
+      reason
+    });
+  }
+
+  function emitCanvasStateToSocket(lobby, game, targetSocket, reason) {
+    io.to(targetSocket.id).emit("game:canvasState", {
+      lobbyId: lobby.id,
+      canvas: game.canvasState,
+      version: game.canvasVersion,
+      reason
+    });
+  }
+
+  function resetCanvas(lobby, game, reason) {
+    game.canvasState = null;
+    game.canvasVersion += 1;
+    emitCanvasState(lobby, game, reason);
+  }
+
   function emitPresenterOptions(lobby, game) {
     if (!game.presenterUserId) return;
     const presenter = lobby.members.get(game.presenterUserId);
@@ -279,6 +115,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     game.lastRoundResult = null;
 
     emitGameState(lobby, game, reason);
+    resetCanvas(lobby, game, "new-round");
     emitPresenterOptions(lobby, game);
   }
 
@@ -311,6 +148,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     game.roundEndsAt = null;
 
     emitGameState(lobby, game, "game-over");
+    resetCanvas(lobby, game, "game-over");
     io.to(lobby.id).emit("game:over", {
       reason,
       scores: buildScoreboard(lobby, game.scores)
@@ -360,6 +198,8 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     game.guessedThisRound = new Set();
     game.lastPresenterIndex = -1;
     game.lastRoundResult = null;
+    game.canvasState = null;
+    game.canvasVersion = 0;
 
     game.scores = new Map();
     syncMembers(game, lobby);
@@ -527,7 +367,69 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     if (!game) return emitError(ack, "Game not started");
 
     emitGameStateToSocket(lobby, game, socket, "sync");
+    emitCanvasStateToSocket(lobby, game, socket, "sync");
     if (typeof ack === "function") ack({ ok: true });
+  });
+
+  socket.on("game:canvas:sync", (payload = {}, ack) => {
+    const lobby = getLobbyOrError(payload, ack);
+    if (!lobby) return;
+
+    const game = gameStore.getGame(lobby.id);
+    if (!game) return emitError(ack, "Game not started");
+
+    emitCanvasStateToSocket(lobby, game, socket, "sync");
+    if (typeof ack === "function") ack({ ok: true });
+  });
+
+  socket.on("game:canvas:update", (payload = {}, ack) => {
+    const lobby = getLobbyOrError(payload, ack);
+    if (!lobby) return;
+
+    const game = gameStore.getGame(lobby.id);
+    if (!game) return emitError(ack, "Game not started");
+
+    if (game.status !== "in-round") {
+      return emitError(ack, "Drawing is only available during an active round");
+    }
+
+    if (socket.data.userId !== game.presenterUserId) {
+      return emitError(ack, "Only the presenter can draw");
+    }
+
+    const normalized = normalizeCanvasState(payload.canvas);
+    if (normalized.error) {
+      return emitError(ack, normalized.error);
+    }
+
+    if (!normalized.canvas) {
+      return emitError(ack, "Canvas payload is required");
+    }
+
+    game.canvasState = normalized.canvas;
+    game.canvasVersion += 1;
+
+    emitCanvasState(lobby, game, "update");
+    if (typeof ack === "function") ack({ ok: true, version: game.canvasVersion });
+  });
+
+  socket.on("game:canvas:clear", (payload = {}, ack) => {
+    const lobby = getLobbyOrError(payload, ack);
+    if (!lobby) return;
+
+    const game = gameStore.getGame(lobby.id);
+    if (!game) return emitError(ack, "Game not started");
+
+    if (game.status !== "in-round") {
+      return emitError(ack, "Drawing is only available during an active round");
+    }
+
+    if (socket.data.userId !== game.presenterUserId) {
+      return emitError(ack, "Only the presenter can clear the canvas");
+    }
+
+    resetCanvas(lobby, game, "clear");
+    if (typeof ack === "function") ack({ ok: true, version: game.canvasVersion });
   });
 
   socket.on("disconnect", () => {

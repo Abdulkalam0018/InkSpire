@@ -101,6 +101,15 @@ pre {
   gap: 6px;
 }
 
+.field.compact {
+  gap: 4px;
+}
+
+.field.grow {
+  min-width: 180px;
+  flex: 1;
+}
+
 input,
 button {
   font: inherit;
@@ -182,4 +191,36 @@ button:disabled {
 
 .muted {
   color: var(--muted);
+}
+
+.drawing-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.drawing-toolbar input[type="color"] {
+  padding: 0;
+  width: 46px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.drawing-toolbar input[type="range"] {
+  width: 100%;
+}
+
+.canvas-frame {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 8px;
+}
+
+.canvas-frame canvas {
+  display: block;
+  border-radius: 8px;
 }
