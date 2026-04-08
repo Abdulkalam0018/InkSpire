@@ -5,6 +5,7 @@ import router from "./router.jsx";
 import "./index.css";
 import { ClerkProvider } from '@clerk/react'
 import { SocketProvider } from "./context/SocketContext.jsx";
+import { LobbyProvider } from "./context/LobbyContext.jsx";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -16,7 +17,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
       <SocketProvider>
-        <RouterProvider router={router} />
+        <LobbyProvider>
+          <RouterProvider router={router} />
+        </LobbyProvider>
       </SocketProvider>
     </ClerkProvider>
   </React.StrictMode>
