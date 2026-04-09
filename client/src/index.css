@@ -194,10 +194,152 @@ button:disabled {
 }
 
 .drawing-toolbar {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #ffd9cf;
+  background:
+    linear-gradient(135deg, #fff4ee 0%, #ffffff 42%, #fff9f6 100%),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 122, 92, 0.07) 0,
+      rgba(255, 122, 92, 0.07) 8px,
+      transparent 8px,
+      transparent 16px
+    );
+  box-shadow: 0 12px 26px rgba(255, 122, 92, 0.12);
+}
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.palette-btn {
+  min-height: 56px;
+  border-radius: 12px;
+  border: 1px dashed #ef9b86;
+  background: #fff;
+  color: var(--accent-dark);
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+}
+
+.palette-btn:hover {
+  border-style: solid;
+}
+
+.palette-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.palette-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.palette-btn span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.drawing-controls-row {
+  display: grid;
   gap: 12px;
+  grid-template-columns: auto 1fr minmax(170px, 240px);
+  align-items: end;
+}
+
+.palette-color-block {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.color-tile {
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  border: 1px solid #f3b5a4;
+  background: var(--picked);
+  display: block;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.65);
+}
+
+.color-tile input[type="color"] {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.palette-colors {
+  padding-bottom: 0;
+}
+
+.size-dots {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.size-dot {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid #f1b8a8;
+  background: #fff;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.size-dot span {
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: 999px;
+  background: #2d2d2d;
+  display: block;
+}
+
+.size-dot.active {
+  background: #fff4ef;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 122, 92, 0.2);
+}
+
+.color-presets {
+  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
+  padding-bottom: 3px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px #d9d4cc;
+  padding: 0;
+}
+
+.swatch.active {
+  box-shadow:
+    0 0 0 2px #171717,
+    0 0 0 4px #fff;
 }
 
 .drawing-toolbar input[type="color"] {
@@ -214,13 +356,60 @@ button:disabled {
 }
 
 .canvas-frame {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: #ffffff;
-  padding: 8px;
+  position: relative;
+  border: 1px solid #d7d2ca;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 16% 12%, #ffffff 0%, #fcfbf9 56%, #f3efe9 100%);
+  padding: 10px;
+  overflow: hidden;
+}
+
+.canvas-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(23, 23, 23, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 23, 23, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.45;
 }
 
 .canvas-frame canvas {
+  position: relative;
+  z-index: 1;
   display: block;
-  border-radius: 8px;
+  border-radius: 10px;
+}
+
+.canvas-frame canvas.lower-canvas {
+  border: 1px solid #e7e3dc;
+  background: #ffffff;
+}
+
+.canvas-frame canvas.upper-canvas {
+  background: transparent;
+}
+
+@media (max-width: 800px) {
+  .palette-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .palette-color-block {
+    grid-template-columns: 1fr;
+  }
+
+  .color-tile {
+    width: 100%;
+    max-width: 80px;
+  }
+
+  .drawing-controls-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
 }
