@@ -46,6 +46,56 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     return lobby;
   }
 
+  function requireLobbyMember(payload, ack) {
+    const lobby = getLobbyOrError(payload, ack);
+    if (!lobby) return null;
+
+    const userId = socket.data?.userId;
+    if (!userId) {
+      emitError(ack, "Unauthorized: missing user identity");
+      return null;
+    }
+
+    if (socket.data?.lobbyId !== lobby.id) {
+      emitError(ack, "Unauthorized: socket is not joined to this lobby");
+      return null;
+    }
+
+    const member = lobby.members.get(userId);
+    if (!member) {
+      emitError(ack, "Unauthorized: you are not a member of this lobby");
+      return null;
+    }
+
+    if (member.currentSocketId !== socket.id) {
+      emitError(ack, "Unauthorized: socket does not match lobby membership");
+      return null;
+    }
+
+    return { lobby, member };
+  }
+
+  function requireLobbyAdmin(payload, ack, errorMessage = "Only the lobby admin can perform this action") {
+    const context = requireLobbyMember(payload, ack);
+    if (!context) return null;
+
+    if (context.lobby.adminUserId !== context.member.userId) {
+      emitError(ack, errorMessage);
+      return null;
+    }
+
+    return context;
+  }
+
+  function requirePresenter(game, ack, errorMessage = "Only the presenter can perform this action") {
+    if (socket.data?.userId !== game.presenterUserId) {
+      emitError(ack, errorMessage);
+      return false;
+    }
+
+    return true;
+  }
+
   function emitGameState(lobby, game, reason) {
     syncMembers(game, lobby);
     const baseState = buildBaseState(game, lobby, reason);
@@ -229,13 +279,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   }
 
   socket.on("game:start", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyAdmin(payload, ack, "Only the lobby admin can start the game");
+    if (!auth) return;
 
-    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
-      emitError(ack, "Only the lobby admin can start the game");
-      return;
-    }
+    const { lobby } = auth;
 
     const game = gameStore.ensureGame(lobby.id, lobby);
 
@@ -255,8 +302,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:chooseWord", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) {
@@ -269,10 +318,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    if (socket.data.userId !== game.presenterUserId) { // Checks userId
-      emitError(ack, "Only the presenter can choose the word");
-      return;
-    }
+    if (!requirePresenter(game, ack, "Only the presenter can choose the word")) return;
 
     const chosen = normalizeWordInput(payload.word);
     if (!chosen) {
@@ -291,8 +337,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:guess", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) {
@@ -326,15 +374,13 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:nextRound", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyAdmin(payload, ack, "Only the lobby admin can advance rounds");
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
-
-    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
-      return emitError(ack, "Only the lobby admin can advance rounds");
-    }
 
     if (game.status !== "round-ended") {
       return emitError(ack, "Round has not ended yet");
@@ -345,23 +391,23 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:stop", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyAdmin(payload, ack, "Only the lobby admin can stop the game");
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
-
-    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
-      return emitError(ack, "Only the lobby admin can stop the game");
-    }
 
     endGame(lobby, game, "stopped");
     if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("game:sync", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -372,8 +418,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:canvas:sync", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -383,8 +431,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:canvas:update", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -393,9 +443,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return emitError(ack, "Drawing is only available during an active round");
     }
 
-    if (socket.data.userId !== game.presenterUserId) {
-      return emitError(ack, "Only the presenter can draw");
-    }
+    if (!requirePresenter(game, ack, "Only the presenter can draw")) return;
 
     const normalized = normalizeCanvasState(payload.canvas);
     if (normalized.error) {
@@ -414,8 +462,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:canvas:clear", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -424,9 +474,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return emitError(ack, "Drawing is only available during an active round");
     }
 
-    if (socket.data.userId !== game.presenterUserId) {
-      return emitError(ack, "Only the presenter can clear the canvas");
-    }
+    if (!requirePresenter(game, ack, "Only the presenter can clear the canvas")) return;
 
     resetCanvas(lobby, game, "clear");
     if (typeof ack === "function") ack({ ok: true, version: game.canvasVersion });
@@ -438,8 +486,12 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     if (!lobbyId || !userId) return;
 
     const lobby = lobbyStore.getLobby(lobbyId);
+    if (!lobby) return;
+
+    const member = lobby.members.get(userId);
+    if (!member || member.currentSocketId !== socket.id) return;
+
     const game = gameStore.getGame(lobbyId);
-    
     if (!game) return;
 
     // We no longer instantly wipe game.scores or game.guessedThisRound
