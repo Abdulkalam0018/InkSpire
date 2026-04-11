@@ -94,6 +94,7 @@ export default async function socketAuth(socket, next) {
 
 		const verifiedClaims = await verifyToken(token, {
 			secretKey: process.env.CLERK_SECRET_KEY,
+			clockSkewInMs: 20000
 		});
 
 		const userId = verifiedClaims?.sub;

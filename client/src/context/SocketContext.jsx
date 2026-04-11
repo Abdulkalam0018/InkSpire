@@ -34,7 +34,9 @@ export const SocketProvider = ({ children }) => {
         newSocket = io(baseUrl, {
           auth: async (cb) => {
             try {
-              const token = await getToken();
+              const token = await getToken({
+                template: import.meta.env.VITE_APP_CLERK_JWT_TEMPLATE
+              });
               cb({ token });
             } catch (error) {
               console.error('Failed to get Clerk token:', error);
@@ -67,7 +69,7 @@ export const SocketProvider = ({ children }) => {
         });
 
         newSocket.on('connect_error', (error) => {
-          console.error('Socket connection error:', error);
+          console.error('Socket connection error:', error, error?.data);
           if (isMounted) {
             setConnectionError(error.message || 'Connection error');
           }
