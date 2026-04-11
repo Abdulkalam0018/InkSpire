@@ -96,6 +96,24 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     return true;
   }
 
+  function getActiveMemberIds(lobby) {
+    const active = [];
+    for (const member of lobby.members.values()) {
+      if (member.isOnline) {
+        active.push(member.userId);
+      }
+    }
+    return active;
+  }
+
+  function getActiveGuesserIds(lobby, game) {
+    return getActiveMemberIds(lobby).filter((userId) => userId !== game.presenterUserId);
+  }
+
+  function hasEnoughActivePlayers(lobby, minimum = 2) {
+    return getActiveMemberIds(lobby).length >= minimum;
+  }
+
   function emitGameState(lobby, game, reason) {
     syncMembers(game, lobby);
     const baseState = buildBaseState(game, lobby, reason);
@@ -155,13 +173,24 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
   function beginPresenterSelection(lobby, game, reason) {
     clearAllTimers(game);
+
+    const activeMemberIds = getActiveMemberIds(lobby);
+    if (activeMemberIds.length < 2) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
+
     game.status = "presenter-choosing";
     game.word = null;
     game.wordOptions = pickWordOptions(game.settings.wordBank, 3);
     game.guessedThisRound = new Set();
     game.roundStartedAt = null;
     game.roundEndsAt = null;
-    game.presenterUserId = pickNextPresenter(lobby, game);
+    game.presenterUserId = pickNextPresenter(lobby, game, activeMemberIds);
+    if (!game.presenterUserId) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
     game.lastRoundResult = null;
 
     emitGameState(lobby, game, reason);
@@ -176,6 +205,12 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     game.guessedThisRound = new Set();
     game.roundStartedAt = Date.now();
     game.roundEndsAt = game.roundStartedAt + game.settings.roundDurationSec * 1000;
+
+    const activeGuesserIds = getActiveGuesserIds(lobby, game);
+    if (activeGuesserIds.length === 0) {
+      endRound(lobby, game, "insufficient-active-players");
+      return;
+    }
 
     emitGameState(lobby, game, "round-start");
 
@@ -206,6 +241,11 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   }
 
   function startNextRound(lobby, game) {
+    if (!hasEnoughActivePlayers(lobby)) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
+
     game.round += 1;
     beginPresenterSelection(lobby, game, "next-round");
   }
@@ -270,8 +310,16 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
     io.to(lobby.id).emit("game:guessCorrect", { userId }); // Broadasts userId
 
-    const nonPresenterCount = Math.max(0, lobby.members.size - 1);
-    if (nonPresenterCount > 0 && game.guessedThisRound.size >= nonPresenterCount) {
+    const activeGuesserIds = getActiveGuesserIds(lobby, game);
+    if (activeGuesserIds.length === 0) {
+      endRound(lobby, game, "insufficient-active-players", userId);
+      return;
+    }
+
+    const didAllActiveGuessersGuess = activeGuesserIds.every((activeUserId) =>
+      game.guessedThisRound.has(activeUserId)
+    );
+    if (didAllActiveGuessersGuess) {
       endRound(lobby, game, "all-guessed", userId);
     } else {
       emitGameState(lobby, game, "score");
@@ -291,8 +339,8 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    if (lobby.members.size < 2) {
-      emitError(ack, "Need at least 2 players to start a game");
+    if (!hasEnoughActivePlayers(lobby)) {
+      emitError(ack, "Need at least 2 active players to start a game");
       return;
     }
 
@@ -491,16 +539,28 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     const member = lobby.members.get(userId);
     if (!member || member.currentSocketId !== socket.id) return;
 
+    member.isOnline = false;
+
     const game = gameStore.getGame(lobbyId);
     if (!game) return;
 
-    // We no longer instantly wipe game.scores or game.guessedThisRound
-    // Let the game progress, and the disconnected user remains as 'isOnline: false'
+    const activeMemberIds = getActiveMemberIds(lobby);
+    if (game.status !== "idle" && game.status !== "game-over" && activeMemberIds.length < 2) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
 
-    // If everyone left the lobby, cleanup
-    if (!lobby || Array.from(lobby.members.values()).every(m => !m.isOnline)) {
-       // Optional: Add logic to clean up games if empty
-       return; 
+    if (game.status === "presenter-choosing" && userId === game.presenterUserId) {
+      beginPresenterSelection(lobby, game, "presenter-disconnected");
+      return;
+    }
+
+    if (game.status === "in-round") {
+      const activeGuesserIds = getActiveGuesserIds(lobby, game);
+      if (activeGuesserIds.length === 0) {
+        endRound(lobby, game, "insufficient-active-players");
+        return;
+      }
     }
 
     emitGameState(lobby, game, "player-left");
