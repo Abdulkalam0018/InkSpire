@@ -157,6 +157,10 @@ export function LobbyProvider({ children }) {
 		return emitWithAck("game:sync");
 	}, [emitWithAck]);
 
+	const clearLobbyError = useCallback(() => {
+		setLobbyError(null);
+	}, []);
+	
 	const isAdmin =
 		Boolean(lobbyState) && Boolean(authUserId) && lobbyState.adminUserId === authUserId;
 
@@ -165,7 +169,7 @@ export function LobbyProvider({ children }) {
 			lobbyState,
 			lobbyError,
 			setLobbyError,
-			clearLobbyError: () => setLobbyError(null),
+			clearLobbyError,
 			isAdmin,
 			lastGameState,
 			socketStatus: isConnected ? "connected" : isReconnecting ? "reconnecting" : "disconnected",
@@ -192,7 +196,8 @@ export function LobbyProvider({ children }) {
 			updateLobbySettings,
 			startGame,
 			stopGame,
-			syncGame
+			syncGame,
+			clearLobbyError
 		]
 	);
 

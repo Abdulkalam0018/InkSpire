@@ -16,7 +16,7 @@ export function GameProvider({ children }) {
   }, [connectionError]);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !isConnected) return;
 
     const handleGameState = (state) => {
       setGameState(state || null);
@@ -36,7 +36,7 @@ export function GameProvider({ children }) {
       socket.off("game:state", handleGameState);
       socket.off("game:error", handleGameError);
     };
-  }, [socket]);
+  }, [socket, isConnected]); 
 
   const emitWithAck = useCallback(
     (event, payload = {}) =>
@@ -78,6 +78,10 @@ export function GameProvider({ children }) {
     return emitWithAck("game:sync");
   }, [emitWithAck]);
 
+  const clearGameError = useCallback(() => {
+    setGameError(null);
+  }, []);
+
   const presenterName = useMemo(() => {
     if (!gameState?.presenterUserId || !gameState?.scores) return null;
     const presenter = gameState.scores.find(
@@ -86,16 +90,15 @@ export function GameProvider({ children }) {
     return presenter?.name || "Presenter";
   }, [gameState]);
 
-  const canGuess =
-    Boolean(gameState) && gameState.status === "in-round" && !gameState.isPresenter;
+  const value = useMemo(() => {
+    const canGuess = Boolean(gameState) && gameState.status === "in-round" && !gameState.isPresenter;
 
-  const value = useMemo(
-    () => ({
+    return {
       socket,
       gameState,
       gameError,
       setGameError,
-      clearGameError: () => setGameError(null),
+      clearGameError,
       socketStatus: isConnected ? "connected" : isReconnecting ? "reconnecting" : "disconnected",
       socketId: socket?.id || null,
       presenterName,
@@ -103,20 +106,19 @@ export function GameProvider({ children }) {
       chooseWord,
       submitGuess,
       syncGame
-    }),
-    [
-      socket,
-      gameState,
-      gameError,
-      isConnected,
-      isReconnecting,
-      presenterName,
-      canGuess,
-      chooseWord,
-      submitGuess,
-      syncGame
-    ]
-  );
+    };
+  }, [
+    socket,
+    gameState,
+    gameError,
+    isConnected,
+    isReconnecting,
+    presenterName,
+    chooseWord,
+    submitGuess,
+    syncGame,
+    clearGameError
+  ]);
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@clerk/react';
 import { io } from 'socket.io-client';
 
@@ -16,10 +16,11 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-
     if (!isLoaded || !isSignedIn) {
       setSocket(null);
       setIsConnected(false);
+      setIsReconnecting(false);
+      setConnectionError(null);
       return;
     }
 
@@ -28,16 +29,16 @@ export const SocketProvider = ({ children }) => {
 
     const initSocket = async () => {
       try {
-        const BASE_URL = import.meta.env.VITE_APP_BASE_URL || "http://localhost:4000";
+        const baseUrl = import.meta.env.VITE_APP_BASE_URL || 'http://localhost:4000';
 
-        newSocket = io(BASE_URL, {
+        newSocket = io(baseUrl, {
           auth: async (cb) => {
             try {
               const token = await getToken();
               cb({ token });
             } catch (error) {
-              console.error("Failed to get Clerk token:", error);
-              cb(new Error("Authentication failed"));
+              console.error('Failed to get Clerk token:', error);
+              cb(new Error('Authentication failed'));
             }
           },
           reconnection: true,
@@ -49,7 +50,6 @@ export const SocketProvider = ({ children }) => {
           transports: ['websocket', 'polling']
         });
 
-        // Attach event listeners after socket is created
         newSocket.on('connect', () => {
           if (isMounted) {
             console.log('Socket connected:', newSocket.id);
@@ -93,7 +93,7 @@ export const SocketProvider = ({ children }) => {
           setSocket(newSocket);
         }
       } catch (error) {
-        console.error("Socket initialization failed:", error);
+        console.error('Socket initialization failed:', error);
         if (isMounted) {
           setConnectionError(error.message || 'Failed to initialize socket');
         }
@@ -110,10 +110,15 @@ export const SocketProvider = ({ children }) => {
     };
   }, [isLoaded, isSignedIn, getToken]);
 
-
-  return (
-    <SocketContext.Provider value={{ socket, isConnected, isReconnecting, connectionError }}>
-      {children}
-    </SocketContext.Provider>
+  const contextValue = useMemo(
+    () => ({
+      socket,
+      isConnected,
+      isReconnecting,
+      connectionError
+    }),
+    [socket, isConnected, isReconnecting, connectionError]
   );
+
+  return <SocketContext.Provider value={contextValue}>{children}</SocketContext.Provider>;
 };
