@@ -110,6 +110,7 @@ export default async function socketAuth(socket, next) {
 			sessionId: verifiedClaims?.sid,
 			claims: verifiedClaims,
 		};
+		socket.data.userId = userId;
 		socket.user = user;
 
 		return next();
