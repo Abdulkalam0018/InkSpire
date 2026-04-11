@@ -1,5 +1,6 @@
-import { normalizeSettings } from "./game.config.js";
-import { clearAllTimers, createGame } from "./game.state.js";
+import { createGame } from "../domain/gameEntity.js";
+import { normalizeGameSettings } from "../domain/gameSettings.js";
+import { clearAllGameTimers } from "../services/gameTimerService.js";
 
 export function createGameStore() {
   const games = new Map();
@@ -14,16 +15,18 @@ export function createGameStore() {
       game = createGame(lobbyId, lobby);
       games.set(lobbyId, game);
     } else {
-      game.settings = normalizeSettings(lobby?.settings || {});
+      game.settings = normalizeGameSettings(lobby?.settings || {});
     }
+
     return game;
   }
 
   function removeGame(lobbyId) {
     const game = games.get(lobbyId);
     if (game) {
-      clearAllTimers(game);
+      clearAllGameTimers(game);
     }
+
     games.delete(lobbyId);
   }
 

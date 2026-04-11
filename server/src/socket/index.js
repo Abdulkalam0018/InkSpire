@@ -1,8 +1,8 @@
 import { Server as SocketIOServer } from "socket.io";
 import socketAuth from "../middleware/socketAuth.js";
-import { createLobbyStore } from "../lobby/lobbyStore.js" 
-import { handleLobbyEvents } from "../lobby/lobby.controller.js";
-import { createGameStore, handleGameEvents } from "../game/game.controller.js";
+import { SYSTEM_EVENTS } from "../shared/events/index.js";
+import { createLobbyModule, createLobbyStore } from "../lobby/index.js";
+import { createGameModule, createGameStore } from "../game/index.js";
 
 export default function initSocket(httpServer) {
     const allowedOrigins = process.env.CORS_ORIGIN
@@ -25,20 +25,21 @@ export default function initSocket(httpServer) {
         transports: ["websocket", "polling"],
     });
 
-    // Create a single lobby store instance to be shared across all sockets
     const lobbyStore = createLobbyStore();
     const gameStore = createGameStore();
+    const lobbyModule = createLobbyModule({ io, lobbyStore, gameStore });
+    const gameModule = createGameModule({ io, lobbyStore, gameStore });
 
     io.use(socketAuth);
 
     io.on("connection", (socket) => {
-        socket.on("client:ping", () => {
+        socket.on(SYSTEM_EVENTS.CLIENT_PING, () => {
             console.log("Received ping from client");
-            socket.emit("server:pong");
+            socket.emit(SYSTEM_EVENTS.SERVER_PONG);
         });
 
-        handleLobbyEvents(io, socket, lobbyStore, gameStore);
-        handleGameEvents(io, socket, lobbyStore, gameStore);
+        lobbyModule.attachHandlers(socket);
+        gameModule.attachHandlers(socket);
 
         socket.on("disconnect", (reason) => {
             console.log(`Socket ${socket.id} disconnected:`, reason);
