@@ -73,8 +73,10 @@ export function buildScoreboard(lobby, scores) {
   return list;
 }
 
-export function pickNextPresenter(lobby, game) {
-  const memberIds = Array.from(lobby.members.keys());
+export function pickNextPresenter(lobby, game, eligibleMemberIds = null) {
+  const memberIds = Array.isArray(eligibleMemberIds)
+    ? eligibleMemberIds.filter((userId) => lobby.members.has(userId))
+    : Array.from(lobby.members.keys());
   if (memberIds.length === 0) return null;
 
   if (game.presenterUserId && memberIds.includes(game.presenterUserId)) {

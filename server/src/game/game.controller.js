@@ -46,6 +46,74 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     return lobby;
   }
 
+  function requireLobbyMember(payload, ack) {
+    const lobby = getLobbyOrError(payload, ack);
+    if (!lobby) return null;
+
+    const userId = socket.data?.userId;
+    if (!userId) {
+      emitError(ack, "Unauthorized: missing user identity");
+      return null;
+    }
+
+    if (socket.data?.lobbyId !== lobby.id) {
+      emitError(ack, "Unauthorized: socket is not joined to this lobby");
+      return null;
+    }
+
+    const member = lobby.members.get(userId);
+    if (!member) {
+      emitError(ack, "Unauthorized: you are not a member of this lobby");
+      return null;
+    }
+
+    if (member.currentSocketId !== socket.id) {
+      emitError(ack, "Unauthorized: socket does not match lobby membership");
+      return null;
+    }
+
+    return { lobby, member };
+  }
+
+  function requireLobbyAdmin(payload, ack, errorMessage = "Only the lobby admin can perform this action") {
+    const context = requireLobbyMember(payload, ack);
+    if (!context) return null;
+
+    if (context.lobby.adminUserId !== context.member.userId) {
+      emitError(ack, errorMessage);
+      return null;
+    }
+
+    return context;
+  }
+
+  function requirePresenter(game, ack, errorMessage = "Only the presenter can perform this action") {
+    if (socket.data?.userId !== game.presenterUserId) {
+      emitError(ack, errorMessage);
+      return false;
+    }
+
+    return true;
+  }
+
+  function getActiveMemberIds(lobby) {
+    const active = [];
+    for (const member of lobby.members.values()) {
+      if (member.isOnline) {
+        active.push(member.userId);
+      }
+    }
+    return active;
+  }
+
+  function getActiveGuesserIds(lobby, game) {
+    return getActiveMemberIds(lobby).filter((userId) => userId !== game.presenterUserId);
+  }
+
+  function hasEnoughActivePlayers(lobby, minimum = 2) {
+    return getActiveMemberIds(lobby).length >= minimum;
+  }
+
   function emitGameState(lobby, game, reason) {
     syncMembers(game, lobby);
     const baseState = buildBaseState(game, lobby, reason);
@@ -105,13 +173,24 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
   function beginPresenterSelection(lobby, game, reason) {
     clearAllTimers(game);
+
+    const activeMemberIds = getActiveMemberIds(lobby);
+    if (activeMemberIds.length < 2) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
+
     game.status = "presenter-choosing";
     game.word = null;
     game.wordOptions = pickWordOptions(game.settings.wordBank, 3);
     game.guessedThisRound = new Set();
     game.roundStartedAt = null;
     game.roundEndsAt = null;
-    game.presenterUserId = pickNextPresenter(lobby, game);
+    game.presenterUserId = pickNextPresenter(lobby, game, activeMemberIds);
+    if (!game.presenterUserId) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
     game.lastRoundResult = null;
 
     emitGameState(lobby, game, reason);
@@ -126,6 +205,12 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     game.guessedThisRound = new Set();
     game.roundStartedAt = Date.now();
     game.roundEndsAt = game.roundStartedAt + game.settings.roundDurationSec * 1000;
+
+    const activeGuesserIds = getActiveGuesserIds(lobby, game);
+    if (activeGuesserIds.length === 0) {
+      endRound(lobby, game, "insufficient-active-players");
+      return;
+    }
 
     emitGameState(lobby, game, "round-start");
 
@@ -156,6 +241,11 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   }
 
   function startNextRound(lobby, game) {
+    if (!hasEnoughActivePlayers(lobby)) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
+
     game.round += 1;
     beginPresenterSelection(lobby, game, "next-round");
   }
@@ -220,8 +310,16 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
 
     io.to(lobby.id).emit("game:guessCorrect", { userId }); // Broadasts userId
 
-    const nonPresenterCount = Math.max(0, lobby.members.size - 1);
-    if (nonPresenterCount > 0 && game.guessedThisRound.size >= nonPresenterCount) {
+    const activeGuesserIds = getActiveGuesserIds(lobby, game);
+    if (activeGuesserIds.length === 0) {
+      endRound(lobby, game, "insufficient-active-players", userId);
+      return;
+    }
+
+    const didAllActiveGuessersGuess = activeGuesserIds.every((activeUserId) =>
+      game.guessedThisRound.has(activeUserId)
+    );
+    if (didAllActiveGuessersGuess) {
       endRound(lobby, game, "all-guessed", userId);
     } else {
       emitGameState(lobby, game, "score");
@@ -229,13 +327,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   }
 
   socket.on("game:start", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyAdmin(payload, ack, "Only the lobby admin can start the game");
+    if (!auth) return;
 
-    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
-      emitError(ack, "Only the lobby admin can start the game");
-      return;
-    }
+    const { lobby } = auth;
 
     const game = gameStore.ensureGame(lobby.id, lobby);
 
@@ -244,8 +339,8 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    if (lobby.members.size < 2) {
-      emitError(ack, "Need at least 2 players to start a game");
+    if (!hasEnoughActivePlayers(lobby)) {
+      emitError(ack, "Need at least 2 active players to start a game");
       return;
     }
 
@@ -255,8 +350,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:chooseWord", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) {
@@ -269,10 +366,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return;
     }
 
-    if (socket.data.userId !== game.presenterUserId) { // Checks userId
-      emitError(ack, "Only the presenter can choose the word");
-      return;
-    }
+    if (!requirePresenter(game, ack, "Only the presenter can choose the word")) return;
 
     const chosen = normalizeWordInput(payload.word);
     if (!chosen) {
@@ -291,8 +385,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:guess", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) {
@@ -326,15 +422,13 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:nextRound", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyAdmin(payload, ack, "Only the lobby admin can advance rounds");
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
-
-    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
-      return emitError(ack, "Only the lobby admin can advance rounds");
-    }
 
     if (game.status !== "round-ended") {
       return emitError(ack, "Round has not ended yet");
@@ -345,23 +439,23 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:stop", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyAdmin(payload, ack, "Only the lobby admin can stop the game");
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
-
-    if (lobby.adminUserId !== socket.data.userId) { // Checks userId
-      return emitError(ack, "Only the lobby admin can stop the game");
-    }
 
     endGame(lobby, game, "stopped");
     if (typeof ack === "function") ack({ ok: true });
   });
 
   socket.on("game:sync", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -372,8 +466,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:canvas:sync", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -383,8 +479,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:canvas:update", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -393,9 +491,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return emitError(ack, "Drawing is only available during an active round");
     }
 
-    if (socket.data.userId !== game.presenterUserId) {
-      return emitError(ack, "Only the presenter can draw");
-    }
+    if (!requirePresenter(game, ack, "Only the presenter can draw")) return;
 
     const normalized = normalizeCanvasState(payload.canvas);
     if (normalized.error) {
@@ -414,8 +510,10 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("game:canvas:clear", (payload = {}, ack) => {
-    const lobby = getLobbyOrError(payload, ack);
-    if (!lobby) return;
+    const auth = requireLobbyMember(payload, ack);
+    if (!auth) return;
+
+    const { lobby } = auth;
 
     const game = gameStore.getGame(lobby.id);
     if (!game) return emitError(ack, "Game not started");
@@ -424,9 +522,7 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
       return emitError(ack, "Drawing is only available during an active round");
     }
 
-    if (socket.data.userId !== game.presenterUserId) {
-      return emitError(ack, "Only the presenter can clear the canvas");
-    }
+    if (!requirePresenter(game, ack, "Only the presenter can clear the canvas")) return;
 
     resetCanvas(lobby, game, "clear");
     if (typeof ack === "function") ack({ ok: true, version: game.canvasVersion });
@@ -438,17 +534,33 @@ export function handleGameEvents(io, socket, lobbyStore, gameStore) {
     if (!lobbyId || !userId) return;
 
     const lobby = lobbyStore.getLobby(lobbyId);
+    if (!lobby) return;
+
+    const member = lobby.members.get(userId);
+    if (!member || member.currentSocketId !== socket.id) return;
+
+    member.isOnline = false;
+
     const game = gameStore.getGame(lobbyId);
-    
     if (!game) return;
 
-    // We no longer instantly wipe game.scores or game.guessedThisRound
-    // Let the game progress, and the disconnected user remains as 'isOnline: false'
+    const activeMemberIds = getActiveMemberIds(lobby);
+    if (game.status !== "idle" && game.status !== "game-over" && activeMemberIds.length < 2) {
+      endGame(lobby, game, "insufficient-active-players");
+      return;
+    }
 
-    // If everyone left the lobby, cleanup
-    if (!lobby || Array.from(lobby.members.values()).every(m => !m.isOnline)) {
-       // Optional: Add logic to clean up games if empty
-       return; 
+    if (game.status === "presenter-choosing" && userId === game.presenterUserId) {
+      beginPresenterSelection(lobby, game, "presenter-disconnected");
+      return;
+    }
+
+    if (game.status === "in-round") {
+      const activeGuesserIds = getActiveGuesserIds(lobby, game);
+      if (activeGuesserIds.length === 0) {
+        endRound(lobby, game, "insufficient-active-players");
+        return;
+      }
     }
 
     emitGameState(lobby, game, "player-left");

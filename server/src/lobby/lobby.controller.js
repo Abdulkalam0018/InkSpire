@@ -1,4 +1,56 @@
+const disconnectCleanupTimers = new Map();
+
 export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
+  const DEFAULT_DISCONNECT_TTL_MS = 2 * 60 * 1000;
+  const configuredDisconnectTtlMs = Number.parseInt(process.env.LOBBY_DISCONNECT_TTL_MS || "", 10);
+  const disconnectTtlMs =
+    Number.isFinite(configuredDisconnectTtlMs) && configuredDisconnectTtlMs >= 0
+      ? configuredDisconnectTtlMs
+      : DEFAULT_DISCONNECT_TTL_MS;
+
+  function timerKey(lobbyId, userId) {
+    return `${lobbyId}:${userId}`;
+  }
+
+  function clearDisconnectCleanup(lobbyId, userId) {
+    if (!lobbyId || !userId) return;
+
+    const key = timerKey(lobbyId, userId);
+    const timerId = disconnectCleanupTimers.get(key);
+    if (!timerId) return;
+
+    clearTimeout(timerId);
+    disconnectCleanupTimers.delete(key);
+  }
+
+  function scheduleDisconnectCleanup(lobbyId, userId) {
+    if (!lobbyId || !userId) return;
+
+    clearDisconnectCleanup(lobbyId, userId);
+
+    const key = timerKey(lobbyId, userId);
+    const timerId = setTimeout(() => {
+      disconnectCleanupTimers.delete(key);
+
+      const lobby = lobbyStore.getLobby(lobbyId);
+      if (!lobby) return;
+
+      const member = lobby.members.get(userId);
+      if (!member || member.isOnline) return;
+
+      const result = lobbyStore.removeMember(lobbyId, userId);
+
+      if (result?.lobby) {
+        io.to(result.lobby.id).emit("lobby:state", lobbyStore.serializeLobby(result.lobby));
+      }
+
+      if (result?.deleted && gameStore) {
+        gameStore.removeGame(lobbyId);
+      }
+    }, disconnectTtlMs);
+
+    disconnectCleanupTimers.set(key, timerId);
+  }
 
   function buildMember(displayName) {
     const user = socket.user; 
@@ -32,6 +84,8 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
 
   function leaveLobbyById(lobbyId, userId) {
     if (!lobbyId || !userId) return;
+
+    clearDisconnectCleanup(lobbyId, userId);
     
     const result = lobbyStore.removeMember(lobbyId, userId);
     socket.leave(lobbyId);
@@ -86,6 +140,8 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
       emitLobbyError(ack, joinResult.error);
       return;
     }
+
+    clearDisconnectCleanup(lobbyId, member.userId);
 
     const previousLobbyId = socket.data.lobbyId;
     socket.join(lobbyId);
@@ -146,7 +202,19 @@ export function handleLobbyEvents(io, socket, lobbyStore, gameStore) {
   });
 
   socket.on("disconnect", () => {
-    leaveLobbyById(socket.data.lobbyId);
+    const lobbyId = socket.data?.lobbyId;
+    const userId = socket.data?.userId;
+    if (!lobbyId || !userId) return;
+
+    const lobby = lobbyStore.getLobby(lobbyId);
+    if (!lobby) return;
+
+    const member = lobby.members.get(userId);
+    if (!member || member.currentSocketId !== socket.id) return;
+
+    member.isOnline = false;
+    emitLobbyState(lobby);
+    scheduleDisconnectCleanup(lobbyId, userId);
     
     // Note: To handle reconnections, we mark the member as offline instead of removing them immediately.
     
