@@ -67,6 +67,21 @@ export function attachLobbySocketHandlers(socket, lobbyService) {
     }
   });
 
+  socket.on(LOBBY_EVENTS.KICK, (payload = {}, ack) => {
+    try {
+      lobbyService.kickMember(socket, payload);
+      ackSuccess(ack);
+    } catch (error) {
+      respondWithSocketError({
+        socket,
+        ack,
+        eventName: LOBBY_EVENTS.ERROR,
+        error,
+        fallbackMessage: "Failed to kick lobby member"
+      });
+    }
+  });
+
   socket.on("disconnect", () => {
     lobbyService.handleDisconnect(socket);
   });

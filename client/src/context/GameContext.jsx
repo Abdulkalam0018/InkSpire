@@ -8,18 +8,38 @@ export function GameProvider({ children }) {
 
   const [gameState, setGameState] = useState(null);
   const [gameError, setGameError] = useState(null);
-
-  useEffect(() => {
-    if (connectionError) {
-      setGameError(connectionError);
-    }
-  }, [connectionError]);
+  const [chatFeed, setChatFeed] = useState([]);
+  const [hintState, setHintState] = useState(null);
+  const [wordReveal, setWordReveal] = useState(null);
+  const [presenterTimeoutNotice, setPresenterTimeoutNotice] = useState(null);
 
   useEffect(() => {
     if (!socket || !isConnected) return;
 
     const handleGameState = (state) => {
       setGameState(state || null);
+      setHintState(state?.hint || null);
+
+      if (!state) {
+        setWordReveal(null);
+        setPresenterTimeoutNotice(null);
+      } else if (
+        state.reason === "round-start" ||
+        state.reason === "next-round" ||
+        state.reason === "game-start"
+      ) {
+        setWordReveal(null);
+        setPresenterTimeoutNotice(null);
+
+        if (state.reason === "game-start") {
+          setChatFeed([]);
+        }
+      }
+
+      if (state?.reason === "game-over") {
+        setHintState(null);
+      }
+
       setGameError(null);
     };
 
@@ -27,14 +47,51 @@ export function GameProvider({ children }) {
       setGameError(err?.message || "Game error");
     };
 
+    const handleChatMessage = (message) => {
+      setChatFeed((prev) => [...prev, { ...message, kind: message?.kind || "chat" }].slice(-100));
+    };
+
+    const handleChatSystem = (message) => {
+      setChatFeed((prev) => [...prev, { ...message, kind: "system" }].slice(-100));
+    };
+
+    const handleChatBackfill = (payload = {}) => {
+      const messages = Array.isArray(payload.messages) ? payload.messages : [];
+      setChatFeed(messages.slice(-100));
+    };
+
+    const handleHintUpdate = (payload) => {
+      setHintState(payload?.hint || null);
+    };
+
+    const handleWordRevealed = (payload) => {
+      setWordReveal(payload || null);
+    };
+
+    const handlePresenterTimeout = (payload) => {
+      setPresenterTimeoutNotice(payload || null);
+    };
+
     socket.on("game:state", handleGameState);
     socket.on("game:error", handleGameError);
+    socket.on("game:chat:message", handleChatMessage);
+    socket.on("game:chat:system", handleChatSystem);
+    socket.on("game:chat:backfill", handleChatBackfill);
+    socket.on("game:hint:update", handleHintUpdate);
+    socket.on("game:word:revealed", handleWordRevealed);
+    socket.on("game:presenter:timeout", handlePresenterTimeout);
 
     socket.emit("game:sync");
 
     return () => {
       socket.off("game:state", handleGameState);
       socket.off("game:error", handleGameError);
+      socket.off("game:chat:message", handleChatMessage);
+      socket.off("game:chat:system", handleChatSystem);
+      socket.off("game:chat:backfill", handleChatBackfill);
+      socket.off("game:hint:update", handleHintUpdate);
+      socket.off("game:word:revealed", handleWordRevealed);
+      socket.off("game:presenter:timeout", handlePresenterTimeout);
     };
   }, [socket, isConnected]); 
 
@@ -78,6 +135,13 @@ export function GameProvider({ children }) {
     return emitWithAck("game:sync");
   }, [emitWithAck]);
 
+  const sendChatMessage = useCallback(
+    (message) => {
+      return emitWithAck("game:chat:send", { message });
+    },
+    [emitWithAck]
+  );
+
   const clearGameError = useCallback(() => {
     setGameError(null);
   }, []);
@@ -90,33 +154,45 @@ export function GameProvider({ children }) {
     return presenter?.name || "Presenter";
   }, [gameState]);
 
+  const resolvedGameError = gameError || connectionError;
+
   const value = useMemo(() => {
     const canGuess = Boolean(gameState) && gameState.status === "in-round" && !gameState.isPresenter;
 
     return {
       socket,
       gameState,
-      gameError,
+      gameError: resolvedGameError,
       setGameError,
       clearGameError,
       socketStatus: isConnected ? "connected" : isReconnecting ? "reconnecting" : "disconnected",
       socketId: socket?.id || null,
+      chatFeed,
+      hintState,
+      wordReveal,
+      presenterTimeoutNotice,
       presenterName,
       canGuess,
       chooseWord,
       submitGuess,
-      syncGame
+      syncGame,
+      sendChatMessage
     };
   }, [
     socket,
     gameState,
-    gameError,
+    resolvedGameError,
+    chatFeed,
+    hintState,
+    wordReveal,
+    presenterTimeoutNotice,
     isConnected,
     isReconnecting,
     presenterName,
     chooseWord,
     submitGuess,
     syncGame,
+    sendChatMessage,
     clearGameError
   ]);
 

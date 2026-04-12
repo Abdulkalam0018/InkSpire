@@ -1,23 +1,14 @@
 import { createAppError } from "../../shared/errors/appError.js";
 import { normalizeLobbyId } from "../../shared/validation/commonValidators.js";
+import {
+  requireLobby,
+  requireLobbyAdmin,
+  resolveLobbyIdFromPayloadOrSocket
+} from "../../shared/socket/lobbySocketUtils.js";
 
 export function createLobbyService({ io, lobbyStore, gameStore, disconnectService, events }) {
   function emitLobbyState(lobby) {
     io.to(lobby.id).emit(events.STATE, lobbyStore.serializeLobby(lobby));
-  }
-
-  function requireLobby(lobbyId) {
-    const normalizedLobbyId = normalizeLobbyId(lobbyId);
-    if (!normalizedLobbyId) {
-      throw createAppError("LOBBY_CODE_REQUIRED", "Lobby code is required", 400);
-    }
-
-    const lobby = lobbyStore.getLobby(normalizedLobbyId);
-    if (!lobby) {
-      throw createAppError("LOBBY_NOT_FOUND", "Lobby not found", 404);
-    }
-
-    return lobby;
   }
 
   function leaveLobbyById(socket, lobbyId, userId) {
@@ -99,8 +90,8 @@ export function createLobbyService({ io, lobbyStore, gameStore, disconnectServic
   }
 
   function updateLobbySettings(socket, payload = {}) {
-    const lobbyId = payload?.lobbyId || socket.data?.lobbyId;
-    const lobby = requireLobby(lobbyId);
+    const lobbyId = resolveLobbyIdFromPayloadOrSocket(socket, payload);
+    const lobby = requireLobby({ lobbyStore, lobbyId });
 
     const result = lobbyStore.updateSettings(lobby.id, socket.data?.userId, payload.settings);
     if (result?.error) {
@@ -117,6 +108,62 @@ export function createLobbyService({ io, lobbyStore, gameStore, disconnectServic
     }
 
     return result.lobby;
+  }
+
+  function kickMember(socket, payload = {}) {
+    const lobbyId = resolveLobbyIdFromPayloadOrSocket(socket, payload);
+    const lobby = requireLobby({ lobbyStore, lobbyId });
+    requireLobbyAdmin({
+      socket,
+      lobby,
+      message: "Only the lobby admin can kick members"
+    });
+
+    const targetUserId = payload?.userId;
+    if (!targetUserId) {
+      throw createAppError("USER_ID_REQUIRED", "User id is required to kick a member", 400);
+    }
+
+    if (targetUserId === lobby.adminUserId) {
+      throw createAppError("INVALID_KICK_TARGET", "Lobby admin cannot be kicked", 400);
+    }
+
+    const targetMember = lobby.members.get(targetUserId);
+    if (!targetMember) {
+      throw createAppError("LOBBY_MEMBER_NOT_FOUND", "Lobby member not found", 404);
+    }
+
+    const kickReason =
+      typeof payload?.reason === "string" && payload.reason.trim()
+        ? payload.reason.trim().slice(0, 120)
+        : "Removed by the lobby admin";
+
+    disconnectService.clear(lobby.id, targetUserId);
+
+    const targetSocket = io.sockets.sockets.get(targetMember.currentSocketId);
+    if (targetSocket) {
+      targetSocket.leave(lobby.id);
+      if (targetSocket.data?.lobbyId === lobby.id) {
+        targetSocket.data.lobbyId = null;
+      }
+      targetSocket.emit(events.KICKED, {
+        lobbyId: lobby.id,
+        reason: kickReason
+      });
+    }
+
+    const result = lobbyStore.removeMember(lobby.id, targetUserId);
+
+    if (result?.lobby) {
+      emitLobbyState(result.lobby);
+      return result.lobby;
+    }
+
+    if (result?.deleted && gameStore) {
+      gameStore.removeGame(lobby.id);
+    }
+
+    return null;
   }
 
   function handleDisconnect(socket) {
@@ -157,6 +204,7 @@ export function createLobbyService({ io, lobbyStore, gameStore, disconnectServic
     joinLobby,
     leaveLobby,
     updateLobbySettings,
+    kickMember,
     handleDisconnect
   };
 }

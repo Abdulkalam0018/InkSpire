@@ -1,58 +1,35 @@
 import { createAppError } from "../../shared/errors/appError.js";
-import { normalizeLobbyId } from "../../shared/validation/commonValidators.js";
+import { normalizeNonEmptyString } from "../../shared/validation/commonValidators.js";
+import {
+  requireLobbyAdmin as requireSharedLobbyAdmin,
+  requireLobbyMember as requireSharedLobbyMember
+} from "../../shared/socket/lobbySocketUtils.js";
 import { getActiveGuesserIds, getActiveMemberIds, hasEnoughActivePlayers } from "../domain/gameRules.js";
 import { normalizeCanvasState } from "../domain/gameCanvas.js";
-import { normalizeWordInput, pickWordOptions } from "../domain/gameWord.js";
+import { buildHintMask, normalizeWordInput, pickHintRevealOrder, pickWordOptions } from "../domain/gameWord.js";
 import { getRemainingSec } from "../domain/gameSerializer.js";
 import { pickNextPresenter, syncMembers } from "../domain/gameEntity.js";
 import { clearAllGameTimers } from "./gameTimerService.js";
 
+const MAX_CHAT_MESSAGE_LENGTH = 180;
+const MAX_CHAT_FEED_ENTRIES = 80;
+const PRESENTER_CHOICE_TIMEOUT_SEC = 15;
+const CHAT_ENABLED_STATUSES = new Set(["presenter-choosing", "round-ended", "game-over"]);
+const HINT_REVEAL_RATIOS = [0.4, 0.7];
+
 export function createGameService({ lobbyStore, gameStore, broadcaster }) {
-  function resolveLobbyId(socket, payload) {
-    if (typeof payload?.lobbyId === "string" && payload.lobbyId.trim()) {
-      return normalizeLobbyId(payload.lobbyId);
-    }
-
-    return normalizeLobbyId(socket.data?.lobbyId || "");
-  }
-
   function requireLobbyMember(socket, payload) {
-    const lobbyId = resolveLobbyId(socket, payload);
-    if (!lobbyId) {
-      throw createAppError("LOBBY_CODE_REQUIRED", "Lobby code is required", 400);
-    }
-
-    const lobby = lobbyStore.getLobby(lobbyId);
-    if (!lobby) {
-      throw createAppError("LOBBY_NOT_FOUND", "Lobby not found", 404);
-    }
-
-    const userId = socket.data?.userId;
-    if (!userId) {
-      throw createAppError("UNAUTHORIZED", "Unauthorized: missing user identity", 401);
-    }
-
-    if (socket.data?.lobbyId !== lobby.id) {
-      throw createAppError("UNAUTHORIZED", "Unauthorized: socket is not joined to this lobby", 401);
-    }
-
-    const member = lobby.members.get(userId);
-    if (!member) {
-      throw createAppError("UNAUTHORIZED", "Unauthorized: you are not a member of this lobby", 401);
-    }
-
-    if (member.currentSocketId !== socket.id) {
-      throw createAppError("UNAUTHORIZED", "Unauthorized: socket does not match lobby membership", 401);
-    }
-
-    return { lobby, member };
+    return requireSharedLobbyMember({ lobbyStore, socket, payload });
   }
 
   function requireLobbyAdmin(socket, payload, message) {
     const context = requireLobbyMember(socket, payload);
-    if (context.lobby.adminUserId !== context.member.userId) {
-      throw createAppError("FORBIDDEN", message || "Only the lobby admin can perform this action", 403);
-    }
+    requireSharedLobbyAdmin({
+      socket,
+      lobby: context.lobby,
+      member: context.member,
+      message
+    });
 
     return context;
   }
@@ -60,6 +37,94 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
   function requirePresenter(socket, game, message) {
     if (socket.data?.userId !== game.presenterUserId) {
       throw createAppError("FORBIDDEN", message || "Only the presenter can perform this action", 403);
+    }
+  }
+
+  function toValidChatMessage(value) {
+    const normalized = normalizeNonEmptyString(value, "");
+    if (!normalized) return "";
+    return normalized.slice(0, MAX_CHAT_MESSAGE_LENGTH);
+  }
+
+  function appendFeedEntry(game, entry) {
+    const feed = Array.isArray(game.chatFeed) ? game.chatFeed : [];
+    game.chatFeed = [...feed, entry].slice(-MAX_CHAT_FEED_ENTRIES);
+  }
+
+  function publishFeedMessage(lobby, game, entry) {
+    const payload = {
+      kind: entry.kind || "chat",
+      userId: entry.userId || null,
+      name: entry.name || "Player",
+      message: entry.message,
+      sentAt: entry.sentAt || new Date().toISOString()
+    };
+
+    appendFeedEntry(game, payload);
+
+    if (payload.kind === "system") {
+      broadcaster.emitChatSystemMessage(lobby, payload);
+      return;
+    }
+
+    broadcaster.emitChatMessage(lobby, payload);
+  }
+
+  function publishSystemMessage(lobby, game, message) {
+    if (!message) return;
+
+    publishFeedMessage(lobby, game, {
+      kind: "system",
+      message
+    });
+  }
+
+  function initializeHintState(game) {
+    if (!game.word) {
+      game.hintState = null;
+      game.hintRevealOrder = [];
+      return;
+    }
+
+    game.hintRevealOrder = pickHintRevealOrder(game.word);
+    const totalHints = Math.min(HINT_REVEAL_RATIOS.length, Math.max(0, game.hintRevealOrder.length - 1));
+
+    game.hintState = {
+      mask: buildHintMask(game.word, []),
+      revealedCount: 0,
+      totalHints
+    };
+  }
+
+  function scheduleHintTimers(lobby, game) {
+    if (!game.word || !game.hintState || game.hintState.totalHints <= 0) {
+      return;
+    }
+
+    game.hintTimeoutIds = [];
+
+    for (let hintIndex = 0; hintIndex < game.hintState.totalHints; hintIndex += 1) {
+      const ratio = HINT_REVEAL_RATIOS[hintIndex] ?? 0.8;
+      const delayMs = Math.max(1000, Math.floor(game.settings.roundDurationSec * 1000 * ratio));
+
+      const timeoutId = setTimeout(() => {
+        if (game.status !== "in-round" || !game.word || !game.hintState) {
+          return;
+        }
+
+        const revealedCount = hintIndex + 1;
+        const revealIndices = game.hintRevealOrder.slice(0, revealedCount);
+        game.hintState = {
+          ...game.hintState,
+          mask: buildHintMask(game.word, revealIndices),
+          revealedCount
+        };
+
+        refreshAndEmitGameState(lobby, game, "hint");
+        broadcaster.emitHintUpdate(lobby, game, "timer");
+      }, delayMs);
+
+      game.hintTimeoutIds.push(timeoutId);
     }
   }
 
@@ -79,8 +144,12 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     game.status = "game-over";
     game.word = null;
     game.wordOptions = [];
+    game.hintState = null;
+    game.hintRevealOrder = [];
     game.roundStartedAt = null;
     game.roundEndsAt = null;
+    game.presenterChoiceEndsAt = null;
+    game.latestPresenterTimeout = null;
 
     refreshAndEmitGameState(lobby, game, "game-over");
     resetCanvas(lobby, game, "game-over");
@@ -99,9 +168,14 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     game.status = "presenter-choosing";
     game.word = null;
     game.wordOptions = pickWordOptions(game.settings.wordBank, 3);
+    game.hintState = null;
+    game.hintRevealOrder = [];
     game.guessedThisRound = new Set();
     game.roundStartedAt = null;
     game.roundEndsAt = null;
+    game.presenterChoiceEndsAt = Date.now() + PRESENTER_CHOICE_TIMEOUT_SEC * 1000;
+    game.latestWordReveal = null;
+    game.latestPresenterTimeout = null;
     game.presenterUserId = pickNextPresenter(lobby, game, activeMemberIds);
     if (!game.presenterUserId) {
       endGame(lobby, game, "insufficient-active-players");
@@ -113,6 +187,28 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     refreshAndEmitGameState(lobby, game, reason);
     resetCanvas(lobby, game, "new-round");
     broadcaster.emitPresenterOptions(lobby, game);
+
+    game.presenterChoiceTimeoutId = setTimeout(() => {
+      if (game.status !== "presenter-choosing") return;
+
+      const randomIndex = Math.floor(Math.random() * game.wordOptions.length);
+      const autoSelectedWord = game.wordOptions[randomIndex];
+      if (!autoSelectedWord) {
+        endRound(lobby, game, "presenter-timeout");
+        return;
+      }
+
+      game.latestPresenterTimeout = {
+        lobbyId: lobby.id,
+        round: game.round,
+        presenterUserId: game.presenterUserId,
+        timeoutSec: PRESENTER_CHOICE_TIMEOUT_SEC
+      };
+
+      broadcaster.emitPresenterTimeout(lobby, game, PRESENTER_CHOICE_TIMEOUT_SEC);
+      publishSystemMessage(lobby, game, "Presenter timed out. A word was auto-selected.");
+      startRound(lobby, game, autoSelectedWord);
+    }, PRESENTER_CHOICE_TIMEOUT_SEC * 1000);
   }
 
   function startRound(lobby, game, word) {
@@ -122,6 +218,9 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     game.guessedThisRound = new Set();
     game.roundStartedAt = Date.now();
     game.roundEndsAt = game.roundStartedAt + game.settings.roundDurationSec * 1000;
+    game.presenterChoiceEndsAt = null;
+
+    initializeHintState(game);
 
     const activeGuesserIds = getActiveGuesserIds(lobby, game);
     if (activeGuesserIds.length === 0) {
@@ -130,6 +229,8 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     }
 
     refreshAndEmitGameState(lobby, game, "round-start");
+    broadcaster.emitHintUpdate(lobby, game, "round-start");
+    scheduleHintTimers(lobby, game);
 
     game.timerIntervalId = setInterval(() => {
       if (game.status !== "in-round") return;
@@ -162,9 +263,22 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
       word: game.word,
       endedAt: new Date().toISOString()
     };
+    game.presenterChoiceEndsAt = null;
+    game.latestWordReveal = game.word
+      ? {
+          lobbyId: lobby.id,
+          round: game.round,
+          word: game.word,
+          reason
+        }
+      : null;
 
     refreshAndEmitGameState(lobby, game, "round-ended");
     broadcaster.emitRoundEnded(lobby, game.lastRoundResult);
+    broadcaster.emitWordRevealed(lobby, game, reason);
+    if (game.word) {
+      publishSystemMessage(lobby, game, `Round ended. The word was \"${game.word}\".`);
+    }
 
     if (game.round >= game.settings.maxRounds) {
       endGame(lobby, game, "max-rounds");
@@ -187,12 +301,18 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     game.roundStartedAt = null;
     game.roundEndsAt = null;
     game.guessedThisRound = new Set();
+    game.hintState = null;
+    game.hintRevealOrder = [];
     game.lastPresenterIndex = -1;
     game.lastRoundResult = null;
     game.canvasState = null;
     game.canvasVersion = 0;
-
+    game.presenterChoiceEndsAt = null;
+    game.chatFeed = [];
+    game.latestWordReveal = null;
+    game.latestPresenterTimeout = null;
     game.scores = new Map();
+    
     syncMembers(game, lobby);
 
     beginPresenterSelection(lobby, game, "game-start");
@@ -210,6 +330,10 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     game.guessedThisRound.add(userId);
 
     broadcaster.emitGuessCorrect(lobby, userId);
+    const guesser = lobby.members.get(userId);
+    if (guesser) {
+      publishSystemMessage(lobby, game, `${guesser.name} guessed the word.`);
+    }
 
     const activeGuesserIds = getActiveGuesserIds(lobby, game);
     if (activeGuesserIds.length === 0) {
@@ -227,6 +351,8 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
       refreshAndEmitGameState(lobby, game, "score");
     }
   }
+
+  // The following functions are for handling socket events
 
   function start(socket, payload = {}) {
     const { lobby } = requireLobbyAdmin(socket, payload, "Only the lobby admin can start the game");
@@ -270,7 +396,7 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
   }
 
   function guess(socket, payload = {}) {
-    const { lobby } = requireLobbyMember(socket, payload);
+    const { lobby, member } = requireLobbyMember(socket, payload);
     const game = gameStore.getGame(lobby.id);
 
     if (!game) {
@@ -295,7 +421,50 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
       return { correct: true };
     }
 
+    const guessFeedText = toValidChatMessage(payload.guess) || normalizedGuess;
+    publishFeedMessage(lobby, game, {
+      kind: "guess",
+      userId: member.userId,
+      name: member.name,
+      message: guessFeedText
+    });
+
     return { correct: false };
+  }
+
+  function sendChat(socket, payload = {}) {
+    const { lobby, member } = requireLobbyMember(socket, payload);
+    const game = gameStore.getGame(lobby.id);
+
+    if (!game) {
+      throw createAppError("GAME_NOT_STARTED", "Game not started", 400);
+    }
+
+    if (game.status === "in-round") {
+      throw createAppError(
+        "CHAT_DISABLED_DURING_ROUND",
+        "Public chat is disabled during active rounds. Submit guesses using the guess input.",
+        400
+      );
+    }
+
+    if (!CHAT_ENABLED_STATUSES.has(game.status)) {
+      throw createAppError("CHAT_NOT_AVAILABLE", "Chat is not available in the current game state", 400);
+    }
+
+    const message = toValidChatMessage(payload.message);
+    if (!message) {
+      throw createAppError("MESSAGE_REQUIRED", "Message is required", 400);
+    }
+
+    publishFeedMessage(lobby, game, {
+      kind: "chat",
+      userId: member.userId,
+      name: member.name,
+      message
+    });
+
+    return { sent: true };
   }
 
   function nextRound(socket, payload = {}) {
@@ -335,6 +504,8 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     syncMembers(game, lobby);
     broadcaster.emitGameStateToSocket(lobby, game, socket, "sync");
     broadcaster.emitCanvasStateToSocket(lobby, game, socket, "sync");
+    broadcaster.emitChatBackfillToSocket(lobby, game, socket);
+    broadcaster.emitTransientNoticesToSocket(game, socket);
   }
 
   function syncCanvas(socket, payload = {}) {
@@ -438,6 +609,7 @@ export function createGameService({ lobbyStore, gameStore, broadcaster }) {
     start,
     chooseWord,
     guess,
+    sendChat,
     nextRound,
     stop,
     sync,

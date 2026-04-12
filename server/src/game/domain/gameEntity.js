@@ -14,12 +14,20 @@ export function createGame(lobbyId, lobby) {
     guessedThisRound: new Set(),
     lastPresenterIndex: -1,
     lastRoundResult: null,
+    hintState: null,
+    hintRevealOrder: [],
+    chatFeed: [],
+    latestWordReveal: null,
+    latestPresenterTimeout: null,
     settings: normalizeGameSettings(lobby?.settings || {}),
     canvasState: null,
     canvasVersion: 0,
+    presenterChoiceEndsAt: null,
     timerIntervalId: null,
     roundTimeoutId: null,
-    intermissionTimeoutId: null
+    intermissionTimeoutId: null,
+    presenterChoiceTimeoutId: null,
+    hintTimeoutIds: []
   };
 }
 

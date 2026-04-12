@@ -84,6 +84,15 @@ export function attachGameSocketHandlers(socket, gameService) {
     }
   });
 
+  socket.on(GAME_EVENTS.CHAT_SEND, (payload = {}, ack) => {
+    try {
+      const result = gameService.sendChat(socket, payload);
+      ackSuccess(ack, result);
+    } catch (error) {
+      respondWithSocketError({ socket, ack, eventName: GAME_EVENTS.ERROR, error, fallbackMessage: "Failed to send chat" });
+    }
+  });
+
   socket.on("disconnect", () => {
     gameService.handleDisconnect(socket);
   });

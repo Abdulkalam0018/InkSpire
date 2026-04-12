@@ -19,12 +19,6 @@ export function LobbyProvider({ children }) {
 	const [lastGameState, setLastGameState] = useState(null);
 
 	useEffect(() => {
-		if (connectionError) {
-			setLobbyError(connectionError);
-		}
-	}, [connectionError]);
-
-	useEffect(() => {
 		if (!socket) return;
 
 		const handleDisconnect = () => {
@@ -45,6 +39,12 @@ export function LobbyProvider({ children }) {
 			setLobbyError(err?.message || "Lobby error");
 		};
 
+		const handleLobbyKicked = (payload = {}) => {
+			setLobbyState(null);
+			setLastGameState(null);
+			setLobbyError(payload?.reason || "You were removed from the lobby");
+		};
+
 		const handleGameState = (state) => {
 			setLastGameState(state || null);
 		};
@@ -52,6 +52,7 @@ export function LobbyProvider({ children }) {
 		socket.on("disconnect", handleDisconnect);
 		socket.on("lobby:state", handleLobbyState);
 		socket.on("lobby:left", handleLobbyLeft);
+		socket.on("lobby:kicked", handleLobbyKicked);
 		socket.on("lobby:error", handleLobbyError);
 		socket.on("game:state", handleGameState);
 
@@ -59,6 +60,7 @@ export function LobbyProvider({ children }) {
 			socket.off("disconnect", handleDisconnect);
 			socket.off("lobby:state", handleLobbyState);
 			socket.off("lobby:left", handleLobbyLeft);
+			socket.off("lobby:kicked", handleLobbyKicked);
 			socket.off("lobby:error", handleLobbyError);
 			socket.off("game:state", handleGameState);
 		};
@@ -120,6 +122,17 @@ export function LobbyProvider({ children }) {
 		return emitWithAck("lobby:leave");
 	}, [emitWithAck]);
 
+	const kickMember = useCallback(
+		({ lobbyId, userId, reason = "" } = {}) => {
+			return emitWithAck("lobby:kick", {
+				lobbyId: normalizeLobbyId(lobbyId || lobbyState?.id),
+				userId,
+				reason
+			});
+		},
+		[emitWithAck, lobbyState?.id]
+	);
+
 	const updateLobbySettings = useCallback(
 		({ lobbyId, settings = {} } = {}) => {
 			return emitWithAck("lobby:updateSettings", {
@@ -160,6 +173,8 @@ export function LobbyProvider({ children }) {
 	const clearLobbyError = useCallback(() => {
 		setLobbyError(null);
 	}, []);
+
+	const resolvedLobbyError = lobbyError || connectionError;
 	
 	const isAdmin =
 		Boolean(lobbyState) && Boolean(authUserId) && lobbyState.adminUserId === authUserId;
@@ -167,7 +182,7 @@ export function LobbyProvider({ children }) {
 	const value = useMemo(
 		() => ({
 			lobbyState,
-			lobbyError,
+			lobbyError: resolvedLobbyError,
 			setLobbyError,
 			clearLobbyError,
 			isAdmin,
@@ -177,6 +192,7 @@ export function LobbyProvider({ children }) {
 			createLobby,
 			joinLobby,
 			leaveLobby,
+			kickMember,
 			updateLobbySettings,
 			startGame,
 			stopGame,
@@ -184,7 +200,7 @@ export function LobbyProvider({ children }) {
 		}),
 		[
 			lobbyState,
-			lobbyError,
+			resolvedLobbyError,
 			isAdmin,
 			lastGameState,
 			isConnected,
@@ -193,6 +209,7 @@ export function LobbyProvider({ children }) {
 			createLobby,
 			joinLobby,
 			leaveLobby,
+			kickMember,
 			updateLobbySettings,
 			startGame,
 			stopGame,

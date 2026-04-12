@@ -22,3 +22,42 @@ export function maskWord(word) {
     .map((char) => (char === " " ? " " : "_"))
     .join("");
 }
+
+export function getRevealableIndices(word) {
+  if (!word) return [];
+
+  const indices = [];
+  for (let index = 0; index < word.length; index += 1) {
+    if (word[index] !== " ") {
+      indices.push(index);
+    }
+  }
+
+  return indices;
+}
+
+export function pickHintRevealOrder(word) {
+  const indices = getRevealableIndices(word);
+  const shuffled = [...indices];
+
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  return shuffled;
+}
+
+export function buildHintMask(word, revealedIndices = []) {
+  if (!word) return null;
+
+  const revealedSet = new Set(revealedIndices);
+
+  return word
+    .split("")
+    .map((char, index) => {
+      if (char === " ") return " ";
+      return revealedSet.has(index) ? char : "_";
+    })
+    .join("");
+}

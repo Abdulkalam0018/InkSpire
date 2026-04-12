@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useGame } from "../../context/GameContext.jsx";
 
 export default function GameStatusCard() {
-  const { gameState, presenterName, gameError } = useGame();
+  const { gameState, presenterName, gameError, hintState, wordReveal, presenterTimeoutNotice } = useGame();
   const navigate = useNavigate();
 
   return (
@@ -32,7 +32,16 @@ export default function GameStatusCard() {
         <span className="pill">
           Round {gameState?.round ?? 0}/{gameState?.settings?.maxRounds ?? "-"}
         </span>
+        {!gameState?.isPresenter && hintState?.mask ? (
+          <span className="pill">Hint: {hintState.mask}</span>
+        ) : null}
       </div>
+
+      {presenterTimeoutNotice ? (
+        <div className="note">Presenter timed out. A word was auto-selected for this round.</div>
+      ) : null}
+
+      {wordReveal?.word ? <div className="note">Word revealed: {wordReveal.word}</div> : null}
 
       {gameError ? <div className="error">{gameError}</div> : null}
     </section>

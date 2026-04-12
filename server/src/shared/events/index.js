@@ -2,9 +2,11 @@ export const LOBBY_EVENTS = {
   CREATE: "lobby:create",
   JOIN: "lobby:join",
   LEAVE: "lobby:leave",
+  KICK: "lobby:kick",
   UPDATE_SETTINGS: "lobby:updateSettings",
   STATE: "lobby:state",
   LEFT: "lobby:left",
+  KICKED: "lobby:kicked",
   ERROR: "lobby:error"
 };
 
@@ -21,6 +23,13 @@ export const GAME_EVENTS = {
   PRESENTER_OPTIONS: "game:presenterOptions",
   ERROR: "game:error",
   GUESS_CORRECT: "game:guessCorrect",
+  CHAT_SEND: "game:chat:send",
+  CHAT_MESSAGE: "game:chat:message",
+  CHAT_SYSTEM: "game:chat:system",
+  CHAT_BACKFILL: "game:chat:backfill",
+  HINT_UPDATE: "game:hint:update",
+  WORD_REVEALED: "game:word:revealed",
+  PRESENTER_TIMEOUT: "game:presenter:timeout",
   CANVAS_SYNC: "game:canvas:sync",
   CANVAS_UPDATE: "game:canvas:update",
   CANVAS_CLEAR: "game:canvas:clear",
