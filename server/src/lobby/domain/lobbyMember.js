@@ -1,4 +1,4 @@
-import { getSocketUserId } from "../../shared/socket/socketContext.js";
+import { getSocketUserId } from "../../shared/socket/lobbySocketUtils.js";
 import { normalizeNonEmptyString } from "../../shared/validation/commonValidators.js";
 
 export function buildLobbyMember(socket, displayName) {

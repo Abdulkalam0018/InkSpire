@@ -3,7 +3,24 @@ import {
   normalizeCreateSettings,
   normalizeUpdateSettings
 } from "../domain/lobbySettings.js";
-import { serializeLobby } from "../domain/lobbySerializer.js";
+
+function serializeLobbyMember(member) {
+  return {
+    userId: member.userId,
+    name: member.name,
+    isOnline: member.isOnline
+  };
+}
+
+function serializeLobby(lobby) {
+  return {
+    id: lobby.id,
+    settings: lobby.settings,
+    adminUserId: lobby.adminUserId,
+    createdAt: lobby.createdAt,
+    members: Array.from(lobby.members.values()).map(serializeLobbyMember)
+  };
+}
 
 export function createLobbyStore() {
   const lobbies = new Map();
