@@ -12,14 +12,18 @@ const router = createBrowserRouter([
       {
         index: true,
         element: (
-          // <ProtectedRoute>
+          <ProtectedRoute>
             <Home />
-          // </ProtectedRoute>
+          </ProtectedRoute>
         )
       },
       {
         path: "game",
-        element: <Game />
+        element: (
+          <ProtectedRoute>
+            <Game />
+          </ProtectedRoute>
+        )
       }
     ]
   }
