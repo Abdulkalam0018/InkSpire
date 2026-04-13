@@ -558,6 +558,8 @@ button:disabled {
   gap: 10px;
   align-items: stretch;
   min-height: calc(100dvh - 116px);
+  position: relative;
+  z-index: 1;
 }
 
 .game-left,
@@ -568,12 +570,20 @@ button:disabled {
   gap: 10px;
 }
 
+.game-right {
+  height: 100%;
+  min-height: 0;
+  max-height: calc(100dvh - 120px);
+}
+
 .game-center {
   grid-template-rows: auto 1fr;
 }
 
 .game-canvas-card {
   height: 100%;
+  padding: 0;
+  /* overflow: hidden; */
 }
 
 .game-canvas-card .drawing-board {
@@ -584,6 +594,9 @@ button:disabled {
   padding: 16px 18px;
   display: grid;
   gap: 10px;
+  position: relative;
+  z-index: 30;
+  overflow: visible;
 }
 
 .game-topbar-row {
@@ -593,19 +606,12 @@ button:disabled {
   gap: 14px;
 }
 
-.game-topbar-label {
-  display: block;
-  font-size: 0.76rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: hsl(220 12% 72%);
-}
-
 .game-clock-block,
 .game-hint-block,
 .game-round-block {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .game-clock-value {
@@ -615,8 +621,7 @@ button:disabled {
 }
 
 .game-hint-block {
-  text-align: center;
-  justify-items: center;
+  justify-content: center;
 }
 
 .game-hint-value {
@@ -627,7 +632,8 @@ button:disabled {
 }
 
 .game-round-block {
-  justify-items: end;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .game-round-value {
@@ -637,6 +643,7 @@ button:disabled {
 
 .game-menu-wrap {
   position: relative;
+  z-index: 40;
 }
 
 .game-menu-btn {
@@ -650,7 +657,7 @@ button:disabled {
   top: calc(100% + 8px);
   right: 0;
   width: 176px;
-  z-index: 8;
+  z-index: 100;
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -667,8 +674,18 @@ button:disabled {
 .game-word-card,
 .game-canvas-card,
 .game-scoreboard-card,
-.game-guess-card {
+.game-chat-panel {
   height: fit-content;
+}
+
+.game-right .game-chat-panel {
+  height: 100%;
+}
+
+.game-scoreboard-card > h2,
+.game-canvas-card > h2,
+.game-chat-panel > h2 {
+  margin-bottom: 14px;
 }
 
 .game-score-list {
@@ -744,15 +761,25 @@ button:disabled {
   color: var(--cyan);
 }
 
-.game-chat-card {
-  margin-top: 16px;
-}
-
 .game-chat-scroll {
-  max-height: 240px;
+  max-height: none;
+  min-height: 0;
+  height: 100%;
   overflow-y: auto;
   margin-bottom: 12px;
   padding-right: 6px;
+}
+
+.game-chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 0;
+}
+
+.game-chat-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
 }
 
 .game-chat-list {
@@ -1103,6 +1130,10 @@ button:disabled {
     min-height: auto;
   }
 
+  .game-right {
+    max-height: none;
+  }
+
   .game-topbar-row {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -1110,11 +1141,11 @@ button:disabled {
 
   .game-clock-block,
   .game-round-block {
-    justify-items: start;
+    justify-content: flex-start;
   }
 
   .game-hint-block {
-    justify-items: start;
+    justify-content: flex-start;
     text-align: left;
   }
 

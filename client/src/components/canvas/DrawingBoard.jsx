@@ -67,7 +67,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 	const [canRedo, setCanRedo] = useState(false);
 
 	const canDraw = useMemo(() => getDrawPermission(gameState), [gameState]);
-	const isRoundActive = gameState?.status === "in-round";
 	const isShapeToolActive = SHAPE_TOOLS.includes(toolMode);
 
 	const reportError = useCallback((message) => {
@@ -852,14 +851,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 			<div className="canvas-frame" ref={canvasContainerRef}>
 				<canvas ref={canvasElementRef} />
 			</div>
-
-			<p className="note">
-				{canDraw
-					? "You are presenting. Draw now and others will see updates in real time."
-					: isRoundActive
-						? "Presenter is drawing. You can watch updates in real time."
-						: "Canvas unlocks once the presenter chooses a word and the round starts."}
-			</p>
 		</div>
 	);
 }

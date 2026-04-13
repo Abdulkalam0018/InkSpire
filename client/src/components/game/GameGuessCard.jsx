@@ -14,10 +14,8 @@ function getChatEntryClass(entry) {
 
 export default function GameGuessCard() {
   const { gameState, canGuess, submitGuess, chatFeed, sendChatMessage } = useGame();
-  const [guess, setGuess] = useState("");
-  const [chatMessage, setChatMessage] = useState("");
+  const [messageInput, setMessageInput] = useState("");
   const [guessResult, setGuessResult] = useState(null);
-  const visibleGuess = gameState?.status === "in-round" ? guess : "";
   const visibleGuessResult = gameState?.reason && gameState.reason !== "tick" ? null : guessResult;
 
   const canChat =
@@ -25,95 +23,91 @@ export default function GameGuessCard() {
     (gameState.status === "presenter-choosing" ||
       gameState.status === "round-ended");
 
-  async function handleGuessSubmit(event) {
+  const isRoundActive = gameState?.status === "in-round";
+  const isPresenterInRound = Boolean(isRoundActive && gameState?.isPresenter);
+
+  const inputPlaceholder = !gameState
+    ? "Waiting for game state..."
+    : isRoundActive
+      ? isPresenterInRound
+        ? "You are drawing..."
+        : "Type your guess"
+      : canChat
+        ? "Type a chat message"
+        : "Chat unavailable in current state";
+
+  const isInputDisabled = !gameState || isPresenterInRound || (!isRoundActive && !canChat);
+
+  async function handleSubmit(event) {
     event.preventDefault();
-    const result = await submitGuess(guess);
+    if (!messageInput.trim()) return;
 
-    if (result?.ok === false) return;
+    if (isRoundActive) {
+      if (!canGuess) return;
 
-    if (result?.correct) {
-      setGuessResult("Correct!");
-      setGuess("");
-    } else {
-      setGuessResult("Not quite.");
+      const result = await submitGuess(messageInput);
+      if (result?.ok === false) return;
+
+      if (result?.correct) {
+        setGuessResult("Correct!");
+      } else {
+        setGuessResult("Not quite.");
+      }
+
+      setMessageInput("");
+      return;
     }
-  }
 
-  async function handleChatSubmit(event) {
-    event.preventDefault();
-    if (!chatMessage.trim()) return;
-
-    const result = await sendChatMessage(chatMessage);
+    const result = await sendChatMessage(messageInput);
     if (result?.ok === false) return;
 
-    setChatMessage("");
+    setMessageInput("");
+    setGuessResult(null);
   }
 
   return (
-    <section className="card game-guess-card">
-      <h2>Guess</h2>
-      {canGuess ? (
-        <form className="grid" onSubmit={handleGuessSubmit}>
-          <input
-            value={visibleGuess}
-            onChange={(event) => {
-              setGuess(event.target.value);
-              setGuessResult(null);
-            }}
-            placeholder="Your guess"
-          />
-          <button type="submit" disabled={!guess.trim()}>
-            Submit Guess
-          </button>
-        </form>
-      ) : gameState?.isPresenter ? (
-        <p className="note">You are the presenter this round.</p>
-      ) : (
-        <p className="muted">Guesses open when the round starts.</p>
-      )}
+    <section className="card game-chat-panel">
+      <h2>Chat</h2>
+
+      <div className="game-chat-scroll">
+        {chatFeed.length ? (
+          <ul className="list game-chat-list">
+            {chatFeed.map((entry, index) => (
+              <li className={getChatEntryClass(entry)} key={`${entry.sentAt || "chat"}-${index}`}>
+                {entry.kind === "system" ? (
+                  <span>{entry.message}</span>
+                ) : (
+                  <>
+                    <strong className="game-chat-author">{entry.name || "Player"}</strong>
+                    <span className="game-chat-message">{entry.message}</span>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">No messages yet.</p>
+        )}
+      </div>
 
       {visibleGuessResult ? <div className="note">{visibleGuessResult}</div> : null}
 
-      <div className="card small game-chat-card">
-        <h3>Chat</h3>
-        <div className="game-chat-scroll">
-          {chatFeed.length ? (
-            <ul className="list game-chat-list">
-              {chatFeed.map((entry, index) => (
-                <li className={getChatEntryClass(entry)} key={`${entry.sentAt || "chat"}-${index}`}>
-                  {entry.kind === "system" ? (
-                    <span>{entry.message}</span>
-                  ) : (
-                    <>
-                      <strong className="game-chat-author">{entry.name || "Player"}</strong>
-                      <span className="game-chat-message">{entry.message}</span>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No messages yet.</p>
-          )}
-        </div>
-
-        {canChat ? (
-          <form className="row" onSubmit={handleChatSubmit}>
-            <input
-              value={chatMessage}
-              onChange={(event) => setChatMessage(event.target.value)}
-              placeholder="Say something"
-            />
-            <button type="submit" disabled={!chatMessage.trim()}>
-              Send
-            </button>
-          </form>
-        ) : gameState?.status === "in-round" ? (
-          <p className="muted">Public chat is paused during active rounds. Use the guess box above.</p>
-        ) : (
-          <p className="muted">Chat opens when the game starts.</p>
-        )}
-      </div>
+      <form className="game-chat-input-row" onSubmit={handleSubmit}>
+        <input
+          value={messageInput}
+          onChange={(event) => {
+            setMessageInput(event.target.value);
+            if (isRoundActive) {
+              setGuessResult(null);
+            }
+          }}
+          placeholder={inputPlaceholder}
+          disabled={isInputDisabled}
+        />
+        <button type="submit" disabled={isInputDisabled || !messageInput.trim()}>
+          {isRoundActive ? "Guess" : "Send"}
+        </button>
+      </form>
     </section>
   );
 }

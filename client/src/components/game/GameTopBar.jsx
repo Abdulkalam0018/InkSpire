@@ -24,7 +24,6 @@ export default function GameTopBar() {
     <section className="card game-topbar fade-up">
       <div className="game-topbar-row">
         <div className="game-clock-block">
-          <span className="game-topbar-label">Time</span>
           <strong className="game-clock-value">
             {gameState?.timeRemainingSec !== null && gameState?.timeRemainingSec !== undefined
               ? `${gameState.timeRemainingSec}s`
@@ -33,7 +32,6 @@ export default function GameTopBar() {
         </div>
 
         <div className="game-hint-block">
-          <span className="game-topbar-label">Draw This</span>
           <strong className="game-hint-value">{wordHint}</strong>
         </div>
 
