@@ -5,7 +5,7 @@ export default function GameCanvasCard() {
   const { socket, gameState, setGameError } = useGame();
 
   return (
-    <section className="card">
+    <section className="card game-canvas-card">
       <h2>Canvas</h2>
       <DrawingBoard socket={socket} gameState={gameState} onError={setGameError} />
     </section>

@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { useGame } from "../../context/GameContext.jsx";
 
+function getChatEntryClass(entry) {
+  if (entry.kind === "system") {
+    if (/guessed the word\./i.test(entry.message || "")) return "game-chat-entry is-system-success";
+    if (/round ended/i.test(entry.message || "")) return "game-chat-entry is-system-warning";
+    return "game-chat-entry is-system";
+  }
+
+  if (entry.kind === "guess") return "game-chat-entry is-guess";
+  return "game-chat-entry";
+}
+
 export default function GameGuessCard() {
   const { gameState, canGuess, submitGuess, chatFeed, sendChatMessage } = useGame();
   const [guess, setGuess] = useState("");
@@ -39,7 +50,7 @@ export default function GameGuessCard() {
   }
 
   return (
-    <section className="card">
+    <section className="card game-guess-card">
       <h2>Guess</h2>
       {canGuess ? (
         <form className="grid" onSubmit={handleGuessSubmit}>
@@ -63,18 +74,21 @@ export default function GameGuessCard() {
 
       {visibleGuessResult ? <div className="note">{visibleGuessResult}</div> : null}
 
-      <div className="card small" style={{ marginTop: "16px" }}>
+      <div className="card small game-chat-card">
         <h3>Chat</h3>
-        <div style={{ maxHeight: "180px", overflowY: "auto", marginBottom: "12px" }}>
+        <div className="game-chat-scroll">
           {chatFeed.length ? (
-            <ul className="list">
+            <ul className="list game-chat-list">
               {chatFeed.map((entry, index) => (
-                <li key={`${entry.sentAt || "chat"}-${index}`}>
-                  {entry.kind === "system"
-                    ? `[System] ${entry.message}`
-                    : entry.kind === "guess"
-                      ? `[Guess] ${entry.name || "Player"}: ${entry.message}`
-                      : `${entry.name || "Player"}: ${entry.message}`}
+                <li className={getChatEntryClass(entry)} key={`${entry.sentAt || "chat"}-${index}`}>
+                  {entry.kind === "system" ? (
+                    <span>{entry.message}</span>
+                  ) : (
+                    <>
+                      <strong className="game-chat-author">{entry.name || "Player"}</strong>
+                      <span className="game-chat-message">{entry.message}</span>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

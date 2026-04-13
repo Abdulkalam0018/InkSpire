@@ -4,7 +4,7 @@ export default function GameWordCard() {
   const { gameState, chooseWord } = useGame();
 
   return (
-    <section className="card">
+    <section className="card game-word-card">
       <h2>Word</h2>
       {gameState?.word ? (
         <p className="subtitle" style={{ fontSize: "1.4rem", letterSpacing: "0.2rem" }}>
