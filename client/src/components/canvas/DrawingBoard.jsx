@@ -695,6 +695,10 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 
 	return (
 		<div className="drawing-board grid">
+			<div className="canvas-frame" ref={canvasContainerRef}>
+				<canvas ref={canvasElementRef} />
+			</div>
+
 			{canDraw ? (
 				<div className="drawing-toolbar card">
 					<div className="palette-grid" role="group" aria-label="Canvas tools">
@@ -708,7 +712,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 							<svg viewBox="0 0 24 24" aria-hidden="true">
 								<path d="M4 18c0-2.2 1.8-4 4-4h2l6-6a2 2 0 0 1 2.8 2.8l-6 6v2a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
 							</svg>
-							<span>Brush</span>
 						</button>
 						<button
 							type="button"
@@ -720,7 +723,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 							<svg viewBox="0 0 24 24" aria-hidden="true">
 								<line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
 							</svg>
-							<span>Line</span>
 						</button>
 						<button
 							type="button"
@@ -732,7 +734,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 							<svg viewBox="0 0 24 24" aria-hidden="true">
 								<rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" strokeWidth="2" rx="1" />
 							</svg>
-							<span>Rect</span>
 						</button>
 						<button
 							type="button"
@@ -744,7 +745,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 							<svg viewBox="0 0 24 24" aria-hidden="true">
 								<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
 							</svg>
-							<span>Circle</span>
 						</button>
 						<button
 							type="button"
@@ -757,7 +757,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 								<path d="m6 14 6-6 6 6-5 5H8l-2-2a2 2 0 0 1 0-3Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
 								<line x1="14" y1="19" x2="21" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
 							</svg>
-							<span>Eraser</span>
 						</button>
 						<button
 							type="button"
@@ -771,7 +770,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 								<path d="M9 7 4 12l5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 								<path d="M20 12H4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
 							</svg>
-							<span>Undo</span>
 						</button>
 						<button
 							type="button"
@@ -785,7 +783,6 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 								<path d="m15 7 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 								<path d="M4 12h16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
 							</svg>
-							<span>Redo</span>
 						</button>
 						<button
 							type="button"
@@ -798,59 +795,57 @@ export default function DrawingBoard({ socket, gameState, onError }) {
 								<path d="m6 8 5-5h7l-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 								<path d="m6 8 7 13h7L13 8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 							</svg>
-							<span>Clear</span>
 						</button>
 					</div>
 
-					<div className="palette-color-block">
-						<label className="color-tile" style={{ "--picked": brushColor }}>
-							<input
-								type="color"
-								value={brushColor}
-								onChange={(event) => setBrushColor(event.target.value)}
-								disabled={toolMode === "erase"}
-								aria-label="Pick color"
-							/>
-						</label>
+					<div className="palette-controls-row">
+						<div className="palette-color-block">
+							<label className="color-tile" style={{ "--picked": brushColor }} title="Custom color">
+								<input
+									type="color"
+									value={brushColor}
+									onChange={(event) => setBrushColor(event.target.value)}
+									disabled={toolMode === "erase"}
+									aria-label="Pick color"
+								/>
+							</label>
 
-						<div className="color-presets palette-colors" role="group" aria-label="Quick colors">
-							{PRESET_COLORS.map((color) => (
+							<div className="color-presets palette-colors" role="group" aria-label="Quick colors">
+								{PRESET_COLORS.map((color) => (
+									<button
+										type="button"
+										key={color}
+										className={brushColor === color ? "swatch active" : "swatch"}
+										style={{ "--swatch": color }}
+										onClick={() => {
+											setToolMode("draw");
+											setBrushColor(color);
+										}}
+										aria-label={`Use color ${color}`}
+										title={`Color ${color}`}
+									/>
+								))}
+							</div>
+						</div>
+
+						<div className="size-dots" role="group" aria-label="Brush size">
+							{[2, 6, 12, 20].map((size) => (
 								<button
 									type="button"
-									key={color}
-									className={brushColor === color ? "swatch active" : "swatch"}
-									style={{ "--swatch": color }}
-									onClick={() => {
-										setToolMode("draw");
-										setBrushColor(color);
-									}}
-									aria-label={`Use color ${color}`}
-								/>
+									key={size}
+									className={brushSize === size ? "size-dot active" : "size-dot"}
+									onClick={() => setBrushSize(size)}
+									aria-label={`Set brush size to ${size}`}
+									title={`Size ${size}`}
+								>
+									<span style={{ "--dot": `${Math.max(4, size)}px` }} />
+								</button>
 							))}
 						</div>
 					</div>
 
-					<div className="size-dots" role="group" aria-label="Brush size">
-						{[2, 6, 12, 20].map((size) => (
-							<button
-								type="button"
-								key={size}
-								className={brushSize === size ? "size-dot active" : "size-dot"}
-								onClick={() => setBrushSize(size)}
-								aria-label={`Set brush size to ${size}`}
-								title={`Size ${size}`}
-							>
-								<span style={{ "--dot": `${Math.max(4, size)}px` }} />
-							</button>
-						))}
-					</div>
-
 				</div>
 			) : null}
-
-			<div className="canvas-frame" ref={canvasContainerRef}>
-				<canvas ref={canvasElementRef} />
-			</div>
 		</div>
 	);
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGame } from "../../context/GameContext.jsx";
 
 function getChatEntryClass(entry) {
@@ -16,7 +16,13 @@ export default function GameGuessCard() {
   const { gameState, canGuess, submitGuess, chatFeed, sendChatMessage } = useGame();
   const [messageInput, setMessageInput] = useState("");
   const [guessResult, setGuessResult] = useState(null);
+  const chatScrollRef = useRef(null);
   const visibleGuessResult = gameState?.reason && gameState.reason !== "tick" ? null : guessResult;
+
+  useEffect(() => {
+    if (!chatScrollRef.current) return;
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [chatFeed]);
 
   const canChat =
     Boolean(gameState) &&
@@ -69,7 +75,7 @@ export default function GameGuessCard() {
     <section className="card game-chat-panel">
       <h2>Chat</h2>
 
-      <div className="game-chat-scroll">
+      <div className="game-chat-scroll" ref={chatScrollRef}>
         {chatFeed.length ? (
           <ul className="list game-chat-list">
             {chatFeed.map((entry, index) => (

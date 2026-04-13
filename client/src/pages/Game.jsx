@@ -20,8 +20,8 @@ function GameLayoutContent() {
         </aside>
 
         <section className="game-center">
-          {shouldShowWordCard ? <GameWordCard /> : null}
           <GameCanvasCard />
+          {shouldShowWordCard ? <GameWordCard /> : null}
         </section>
 
         <aside className="game-right">

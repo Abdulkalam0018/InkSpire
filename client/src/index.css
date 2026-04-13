@@ -573,11 +573,11 @@ button:disabled {
 .game-right {
   height: 100%;
   min-height: 0;
-  max-height: calc(100dvh - 120px);
+  max-height: min(75vh, calc(100dvh - 120px));
 }
 
 .game-center {
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 1fr auto;
 }
 
 .game-canvas-card {
@@ -588,6 +588,7 @@ button:disabled {
 
 .game-canvas-card .drawing-board {
   height: 100%;
+  grid-template-rows: 1fr auto;
 }
 
 .game-topbar {
@@ -842,7 +843,7 @@ button:disabled {
 
 .drawing-toolbar {
   display: grid;
-  gap: 14px;
+  gap: 8px;
   border: 1px solid hsl(250 16% 28% / 0.95);
   background:
     linear-gradient(135deg, hsl(250 22% 14% / 0.8) 0%, hsl(246 28% 10% / 0.9) 100%),
@@ -854,26 +855,24 @@ button:disabled {
       transparent 16px
     );
   box-shadow: var(--shadow-soft), 0 0 34px hsl(270 80% 65% / 0.18);
+  padding: 10px 12px;
 }
 
 .palette-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .palette-btn {
-  min-height: 56px;
-  border-radius: 12px;
+  min-height: 40px;
+  border-radius: 10px;
   border: 1px solid hsl(250 14% 32% / 0.9);
   background: hsl(247 24% 13% / 0.86);
   color: hsl(220 14% 88%);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 3px;
-  padding: 6px 4px;
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
 
 .palette-btn:hover {
@@ -887,16 +886,13 @@ button:disabled {
 }
 
 .palette-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: block;
 }
 
 .palette-btn span {
-  font-size: 0.66rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.01em;
+  display: none;
 }
 
 .drawing-controls-row {
@@ -908,15 +904,22 @@ button:disabled {
 
 .palette-color-block {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: auto 1fr;
   align-items: center;
 }
 
+.palette-controls-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
 .color-tile {
-  width: 54px;
-  height: 54px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   border: 1px solid hsl(250 13% 35%);
   background: var(--picked);
   display: block;
@@ -937,13 +940,14 @@ button:disabled {
 
 .size-dots {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .size-dot {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
   border: 1px solid hsl(250 14% 32% / 0.95);
   background: hsl(247 25% 12% / 0.86);
@@ -967,14 +971,14 @@ button:disabled {
 
 .color-presets {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   padding-bottom: 3px;
 }
 
 .swatch {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   border: 2px solid hsl(220 20% 95% / 0.75);
   background: var(--swatch);
@@ -1160,11 +1164,19 @@ button:disabled {
   }
 
   .palette-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .palette-color-block {
     grid-template-columns: 1fr;
+  }
+
+  .palette-controls-row {
+    grid-template-columns: 1fr;
+  }
+
+  .size-dots {
+    justify-content: flex-start;
   }
 
   .color-tile {
