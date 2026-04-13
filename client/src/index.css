@@ -544,19 +544,20 @@ button:disabled {
 }
 
 .game-page {
-  width: min(var(--container-6xl), calc(100% - 1.75rem));
+  width: calc(100% - clamp(10px, 1.4vw, 22px));
   min-height: 100dvh;
   margin-inline: auto;
-  padding: 16px 0 20px;
+  padding: 10px 0 14px;
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .game-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 320px);
-  gap: 14px;
-  align-items: start;
+  grid-template-columns: minmax(190px, 0.9fr) minmax(0, 2.6fr) minmax(220px, 1.1fr);
+  gap: 10px;
+  align-items: stretch;
+  min-height: calc(100dvh - 116px);
 }
 
 .game-left,
@@ -564,7 +565,19 @@ button:disabled {
 .game-right {
   min-width: 0;
   display: grid;
-  gap: 14px;
+  gap: 10px;
+}
+
+.game-center {
+  grid-template-rows: auto 1fr;
+}
+
+.game-canvas-card {
+  height: 100%;
+}
+
+.game-canvas-card .drawing-board {
+  height: 100%;
 }
 
 .game-topbar {
@@ -1087,6 +1100,7 @@ button:disabled {
 
   .game-layout {
     grid-template-columns: 1fr;
+    min-height: auto;
   }
 
   .game-topbar-row {
