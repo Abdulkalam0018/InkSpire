@@ -23,6 +23,7 @@ export function LobbyProvider({ children }) {
 
 		const handleDisconnect = () => {
 			setLobbyState(null);
+			setLastGameState(null);
 		};
 
 		const handleLobbyState = (state) => {
@@ -32,6 +33,7 @@ export function LobbyProvider({ children }) {
 
 		const handleLobbyLeft = () => {
 			setLobbyState(null);
+			setLastGameState(null);
 			setLobbyError(null);
 		};
 

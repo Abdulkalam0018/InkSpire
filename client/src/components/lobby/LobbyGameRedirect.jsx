@@ -8,7 +8,8 @@ export default function LobbyGameRedirect() {
 
   useEffect(() => {
     if (!lastGameState) return;
-    if (lastGameState.status && lastGameState.status !== "idle") {
+    const activeGameStatuses = new Set(["presenter-choosing", "in-round", "round-ended"]);
+    if (activeGameStatuses.has(lastGameState.status)) {
       navigate("/game");
     }
   }, [lastGameState, navigate]);

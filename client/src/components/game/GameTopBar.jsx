@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "../../context/GameContext.jsx";
+import { useLobby } from "../../context/LobbyContext.jsx";
 
 function buildWordHint(gameState, hintState) {
   if (!gameState) return "_ _ _ _";
@@ -13,12 +14,31 @@ function buildWordHint(gameState, hintState) {
 }
 
 export default function GameTopBar() {
-  const { gameState, hintState, gameError, presenterTimeoutNotice, wordReveal } = useGame();
+  const { gameState, hintState, gameError, presenterTimeoutNotice, wordReveal, setGameError } = useGame();
+  const { leaveLobby } = useLobby();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSoundOn, setIsSoundOn] = useState(true);
+  const [isLeavingRoom, setIsLeavingRoom] = useState(false);
 
   const wordHint = useMemo(() => buildWordHint(gameState, hintState), [gameState, hintState]);
+
+  async function handleLeaveRoom() {
+    if (isLeavingRoom) return;
+
+    setIsLeavingRoom(true);
+    const result = await leaveLobby();
+
+    if (result?.ok === false) {
+      setGameError(result.error || "Unable to leave the room");
+      setIsLeavingRoom(false);
+      return;
+    }
+
+    setIsMenuOpen(false);
+    setIsLeavingRoom(false);
+    navigate("/", { replace: true });
+  }
 
   return (
     <section className="card game-topbar fade-up">
@@ -59,8 +79,13 @@ export default function GameTopBar() {
                 >
                   {isSoundOn ? "Mute Sound" : "Unmute Sound"}
                 </button>
-                <button type="button" className="secondary" onClick={() => navigate("/")}>
-                  Leave Room
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={handleLeaveRoom}
+                  disabled={isLeavingRoom}
+                >
+                  {isLeavingRoom ? "Leaving..." : "Leave Room"}
                 </button>
               </div>
             ) : null}
