@@ -672,6 +672,120 @@ button:disabled {
   justify-content: center;
 }
 
+.game-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 2vw, 20px);
+}
+
+.game-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 12%, hsl(270 80% 65% / 0.34), transparent 52%),
+    radial-gradient(circle at 82% 88%, hsl(190 80% 55% / 0.28), transparent 50%),
+    hsl(246 32% 7% / 0.82);
+  backdrop-filter: blur(5px);
+}
+
+.game-overlay-panel {
+  position: relative;
+  z-index: 1;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 30px);
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: clamp(16px, 2.6vw, 26px);
+  border-color: hsl(270 45% 44% / 0.9);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 34px hsl(270 80% 65% / 0.2);
+}
+
+.game-overlay-header {
+  display: grid;
+  gap: 6px;
+}
+
+.game-overlay-header h2 {
+  margin: 0;
+}
+
+.game-overlay-content {
+  display: grid;
+  gap: 12px;
+}
+
+.game-overlay-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.game-overlay-leaderboard {
+  display: grid;
+  gap: 10px;
+}
+
+.game-overlay-leaderboard h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  color: hsl(220 20% 94%);
+}
+
+.game-overlay-score-list {
+  gap: 8px;
+}
+
+.game-overlay-score-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-radius: 12px;
+  border: 1px solid hsl(250 18% 28% / 0.88);
+  background: hsl(247 24% 11% / 0.72);
+  padding: 11px 12px;
+}
+
+.game-overlay-score-item.is-winner {
+  border-color: hsl(190 80% 55% / 0.7);
+  box-shadow: 0 0 20px hsl(190 80% 55% / 0.15);
+}
+
+.game-overlay-rank {
+  min-width: 42px;
+  text-align: center;
+  font-weight: 800;
+  color: hsl(220 16% 90%);
+}
+
+.game-overlay-player-meta {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.game-overlay-player-meta strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-overlay-player-status {
+  font-size: 0.75rem;
+  color: hsl(220 12% 74%);
+}
+
+.game-overlay-points {
+  font-size: 1.2rem;
+  color: var(--cyan);
+}
+
 .game-word-card,
 .game-canvas-card,
 .game-scoreboard-card,
@@ -1155,6 +1269,29 @@ button:disabled {
 
   .game-hint-value {
     letter-spacing: 0.18em;
+  }
+
+  .game-overlay-panel {
+    max-height: calc(100dvh - 20px);
+  }
+
+  .game-overlay-score-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .game-overlay-rank {
+    grid-column: 1 / -1;
+    text-align: left;
+    min-width: 0;
+  }
+
+  .game-overlay-actions {
+    justify-content: stretch;
+  }
+
+  .game-overlay-actions button {
+    width: 100%;
   }
 }
 

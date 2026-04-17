@@ -12,6 +12,7 @@ export function GameProvider({ children }) {
   const [hintState, setHintState] = useState(null);
   const [wordReveal, setWordReveal] = useState(null);
   const [presenterTimeoutNotice, setPresenterTimeoutNotice] = useState(null);
+  const [gameOverState, setGameOverState] = useState(null);
 
   useEffect(() => {
     if (!socket || !isConnected) return;
@@ -23,6 +24,7 @@ export function GameProvider({ children }) {
       if (!state) {
         setWordReveal(null);
         setPresenterTimeoutNotice(null);
+        setGameOverState(null);
       } else if (
         state.reason === "round-start" ||
         state.reason === "next-round" ||
@@ -30,6 +32,7 @@ export function GameProvider({ children }) {
       ) {
         setWordReveal(null);
         setPresenterTimeoutNotice(null);
+        setGameOverState(null);
 
         if (state.reason === "game-start") {
           setChatFeed([]);
@@ -72,6 +75,14 @@ export function GameProvider({ children }) {
       setPresenterTimeoutNotice(payload || null);
     };
 
+    const handleGameOver = (payload = {}) => {
+      const scores = Array.isArray(payload.scores) ? payload.scores : [];
+      setGameOverState({
+        reason: payload.reason || "game-over",
+        scores
+      });
+    };
+
     socket.on("game:state", handleGameState);
     socket.on("game:error", handleGameError);
     socket.on("game:chat:message", handleChatMessage);
@@ -80,6 +91,7 @@ export function GameProvider({ children }) {
     socket.on("game:hint:update", handleHintUpdate);
     socket.on("game:word:revealed", handleWordRevealed);
     socket.on("game:presenter:timeout", handlePresenterTimeout);
+    socket.on("game:over", handleGameOver);
 
     socket.emit("game:sync");
 
@@ -92,6 +104,7 @@ export function GameProvider({ children }) {
       socket.off("game:hint:update", handleHintUpdate);
       socket.off("game:word:revealed", handleWordRevealed);
       socket.off("game:presenter:timeout", handlePresenterTimeout);
+      socket.off("game:over", handleGameOver);
     };
   }, [socket, isConnected]); 
 
@@ -155,6 +168,7 @@ export function GameProvider({ children }) {
   }, [gameState]);
 
   const resolvedGameError = gameError || connectionError;
+  const isGameOver = gameState?.status === "game-over";
 
   const value = useMemo(() => {
     const canGuess = Boolean(gameState) && gameState.status === "in-round" && !gameState.isPresenter;
@@ -171,6 +185,8 @@ export function GameProvider({ children }) {
       hintState,
       wordReveal,
       presenterTimeoutNotice,
+      gameOverState,
+      isGameOver,
       presenterName,
       canGuess,
       chooseWord,
@@ -186,6 +202,8 @@ export function GameProvider({ children }) {
     hintState,
     wordReveal,
     presenterTimeoutNotice,
+    gameOverState,
+    isGameOver,
     isConnected,
     isReconnecting,
     presenterName,
